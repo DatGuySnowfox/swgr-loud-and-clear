@@ -132,6 +132,64 @@ local expected = {}
 local applied = false
 local drift_reported = false
 
+----------------------------------------------------------------------
+-- baseline persistence
+----------------------------------------------------------------------
+
+-- The authored volumes have to outlive this Lua state. A hot reload (Ctrl+R)
+-- hands the mod a fresh, empty baseline table while the submixes are still
+-- ducked, so re-capturing from the live value would treat an already-reduced
+-- volume as "authored" and multiply it again. Three reloads at 0.60 would take
+-- SS_Music to 0.216. Writing the first capture to disk stops that, and also
+-- survives a game restart.
+
+local BASELINE_FILE = (function()
+    -- Prefer the script's own directory so this does not depend on the working
+    -- directory, which UE4SS sets to the ue4ss folder.
+    local ok, info = pcall(debug.getinfo, 1, "S")
+    if ok and info and info.source then
+        local dir = info.source:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$")
+        if dir then return dir .. "/baseline.txt" end
+    end
+    return "Mods/DialogueMix/Scripts/baseline.txt"
+end)()
+
+local function save_baseline()
+    local handle = io.open(BASELINE_FILE, "w")
+    if not handle then
+        log("could not write %s, baseline will not survive a reload", BASELINE_FILE)
+        return false
+    end
+    handle:write("# authored submix OutputVolume captured before this mod ran\n")
+    handle:write("# delete this file, or run dmx_forget, to re-capture\n")
+    for relpath, value in pairs(baseline) do
+        handle:write(string.format("%s=%.6f\n", relpath, value))
+    end
+    handle:close()
+    return true
+end
+
+local function load_baseline()
+    local handle = io.open(BASELINE_FILE, "r")
+    if not handle then return 0 end
+    local count = 0
+    for line in handle:lines() do
+        if not line:match("^%s*#") then
+            local key, value = line:match("^([^=]+)=(.+)$")
+            local number = tonumber(value)
+            if key and number then
+                baseline[key] = number
+                count = count + 1
+            end
+        end
+    end
+    handle:close()
+    if count > 0 then
+        log("restored %d authored volumes from baseline.txt", count)
+    end
+    return count
+end
+
 local function world_context()
     local ok, world = pcall(UEHelpers.GetWorldContextObject)
     if ok and valid(world) then return world end
@@ -154,6 +212,9 @@ local function set_submix_multiplier(relpath, multiplier)
 
     if baseline[relpath] == nil then
         baseline[relpath] = read_float(submix, "OutputVolume") or 1.0
+        -- Persist immediately: a crash or reload before the next save would
+        -- otherwise lose the only record of the authored value.
+        save_baseline()
     end
 
     local target = baseline[relpath] * multiplier
@@ -350,6 +411,20 @@ RegisterConsoleCommandHandler("dmx_apply", function() apply() return true end)
 RegisterConsoleCommandHandler("dmx_dump", function() dump() return true end)
 RegisterConsoleCommandHandler("dmx_reset", function() reset() return true end)
 
+-- Forgets the stored authored volumes so the next apply re-captures them.
+-- Only correct to run when the submixes are at their authored levels, so it
+-- resets them first.
+RegisterConsoleCommandHandler("dmx_forget", function()
+    reset()
+    ExecuteInGameThread(function()
+        baseline = {}
+        expected = {}
+        os.remove(BASELINE_FILE)
+        log("forgot stored baseline. Next apply re-captures from live values.")
+    end)
+    return true
+end)
+
 RegisterConsoleCommandHandler("dmx_verify", function()
     ExecuteInGameThread(function()
         local drifted = verify()
@@ -378,6 +453,10 @@ end)
 ----------------------------------------------------------------------
 
 log("loaded. Ctrl+F7 apply, Ctrl+F8 dump, Ctrl+F9 reset")
+
+-- Before anything touches a submix, recover the authored volumes from a
+-- previous session or a previous load of this script.
+load_baseline()
 
 if CONFIG.apply_on_start then
     -- Submix assets are not reachable until the audio device and the first world

@@ -124,6 +124,40 @@ release from https://github.com/UE4SS-RE/RE-UE4SS/releases.
 Packaging date is not a reliable signal here. A build repackaged in 2026 for a
 different game can still contain a 2024-era DLL. Check the DLL, not the zip.
 
+## Hot reload
+
+Lua mods reload without restarting the game. In `UE4SS-settings.ini`:
+
+```ini
+EnableHotReloadSystem = 1      ; Ctrl+R reloads all mods
+HotReloadKey = R
+EnableAutoReloadingLuaMods = 1 ; reload automatically on file save
+```
+
+Vortex-packaged UE4SS ships with both set to `0`, so turn them on. Note that
+Vortex may revert its managed files on redeploy.
+
+With auto-reload on, editing `main.lua` in the deployed
+`ue4ss\Mods\DialogueMix\Scripts\` folder applies on save. Keep the repo copy in
+step with `.\tools\install.ps1 -ModOnly`, or edit the repo and run that to push
+the change over.
+
+### Why baseline.txt exists
+
+A reload hands the mod a fresh Lua state, so in-memory state is lost. That is a
+problem for the authored submix volumes specifically: the submixes are still
+ducked at reload time, so re-capturing from the live value would treat an
+already-reduced volume as "authored" and multiply it again. `SS_Music` at 0.60
+would walk down to 0.36, then 0.216, across three reloads.
+
+So the first capture is written to `baseline.txt` next to the script and read
+back on load. Re-applying then becomes idempotent, which also makes the startup
+pass safe to run repeatedly.
+
+Run `dmx_forget` to discard it and re-capture, which resets the submixes to
+their stored values first. Worth doing after a game patch, since a patch can
+change the authored volumes and make the stored file stale.
+
 ## Persistence
 
 The mod does not fight the game for these values, and probably does not need to.

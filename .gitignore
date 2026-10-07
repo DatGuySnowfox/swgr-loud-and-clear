@@ -2,3 +2,6 @@
 *.log
 ue4ss.backup-*/
 /dist/
+
+# runtime state: captured authored submix volumes
+baseline.txt
