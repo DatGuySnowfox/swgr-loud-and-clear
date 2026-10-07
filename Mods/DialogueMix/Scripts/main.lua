@@ -95,9 +95,12 @@ local CONFIG = {
         ["Submixes/SS_Commentary"]                     = "Modulation/Submixes/CB_SubmixCommentary",
     },
 
-    -- Also write the base OutputVolume. Harmless, and it is the right stage for
-    -- any submix whose modulation destination turns out to be disabled.
-    also_write_submix = true,
+    -- Writing the base OutputVolume is measurably useless here: it reads back as
+    -- nil on all 62 submixes and never changed anything audible, because each
+    -- submix's gain comes from its OutputVolumeModulation destination instead.
+    -- Off by default so the log stops reporting writes that do nothing. Turn it
+    -- on only when investigating a submix whose modulation is disabled.
+    also_write_submix = false,
 
     -- Sound class volume: a separate gain stage from the modulation buses, and
     -- the one place a real boost is possible.
@@ -191,6 +194,11 @@ end
 
 -- relpath -> authored OutputVolume, captured once, before we touch anything.
 local baseline = {}
+-- relpath -> authored sound class Volume. Declared up here, not next to the
+-- class code, because the persistence below has to be able to see it: a hot
+-- reload would otherwise read the already-boosted 2.0 back as "authored" and
+-- multiply it again, reaching 4.0 and then 8.0 across reloads.
+local class_baseline = {}
 -- relpath -> what we last wrote, so the verify pass can detect drift.
 local expected = {}
 local applied = false
@@ -248,10 +256,13 @@ local function save_baseline()
         log("could not write %s, baseline will not survive a reload", BASELINE_FILE)
         return false
     end
-    handle:write("# authored submix OutputVolume captured before this mod ran\n")
+    handle:write("# authored volumes captured before this mod ran\n")
     handle:write("# delete this file, or run dmx_forget, to re-capture\n")
     for relpath, value in pairs(baseline) do
-        handle:write(string.format("%s=%.6f\n", relpath, value))
+        handle:write(string.format("submix:%s=%.6f\n", relpath, value))
+    end
+    for relpath, value in pairs(class_baseline) do
+        handle:write(string.format("class:%s=%.6f\n", relpath, value))
     end
     handle:close()
     return true
@@ -266,14 +277,23 @@ local function load_baseline()
             local key, value = line:match("^([^=]+)=(.+)$")
             local number = tonumber(value)
             if key and number then
-                baseline[key] = number
+                local kind, relpath = key:match("^(%a+):(.+)$")
+                if kind == "class" then
+                    class_baseline[relpath] = number
+                elseif kind == "submix" then
+                    baseline[relpath] = number
+                else
+                    -- Unprefixed keys are from an earlier format; those only
+                    -- ever held submix values.
+                    baseline[key] = number
+                end
                 count = count + 1
             end
         end
     end
     handle:close()
     if count > 0 then
-        log("restored %d authored volumes from baseline.txt", count)
+        log("restored %d authored volumes from %s", count, BASELINE_FILE)
     end
     return count
 end
@@ -504,9 +524,6 @@ local function set_submix_multiplier(relpath, multiplier)
     return true
 end
 
--- relpath -> authored class volume, captured before we touch it.
-local class_baseline = {}
-
 -- Writes a sound class volume and reads it back to confirm it took.
 -- This stage is readable, so unlike the submix write there is no need to infer
 -- success from the absence of an error.
@@ -525,6 +542,9 @@ local function set_class_multiplier(relpath, multiplier)
             return false
         end
         class_baseline[relpath] = current
+        -- Persist before the first write, so a reload cannot mistake the
+        -- boosted value for the authored one.
+        save_baseline()
     end
 
     local target = class_baseline[relpath] * multiplier
@@ -669,15 +689,35 @@ local function verify()
         end
     end
 
+    -- The meaningful check. Sound class volume is the stage that audibly works
+    -- and the only one that reads back, so this is the one place drift can
+    -- actually be measured rather than inferred.
+    local checked = 0
+    if CONFIG.class_boost ~= 1.0 then
+        for _, relpath in ipairs(CONFIG.voice_classes) do
+            local authored = class_baseline[relpath]
+            local class = resolve(relpath)
+            if authored and class then
+                local want = authored * CONFIG.class_boost
+                local actual
+                pcall(function() actual = class.Properties.Volume end)
+                if type(actual) == "number" then
+                    checked = checked + 1
+                    if math.abs(actual - want) > 0.0005 then
+                        drifted = drifted + 1
+                        log("drift on class %s: expected %.3f, found %.3f. Re-applying.",
+                            relpath, want, actual)
+                        set_class_multiplier(relpath, CONFIG.class_boost)
+                    end
+                end
+            end
+        end
+    end
+
     if drifted == 0 and not drift_reported then
         drift_reported = true
-        -- Worth stating what this does and does not prove. It only reads the
-        -- base OutputVolume back. On the first run every value held perfectly
-        -- and nothing changed audibly, which is how we learned that stage is
-        -- inert. A bus override cannot be read back the same way, because the
-        -- live value lives inside the modulation system, not on the object.
-        log("verify: %d submix base volumes unchanged (this stage is inert here)",
-            (function() local n = 0 for _ in pairs(expected) do n = n + 1 end return n end)())
+        log("verify: %d class volumes still hold (measured, this stage reads back)",
+            checked)
     elseif drifted > 0 then
         drift_reported = false
     end
@@ -807,7 +847,9 @@ RegisterConsoleCommandHandler("dmx_forget", function()
     reset()
     ExecuteInGameThread(function()
         baseline = {}
+        class_baseline = {}
         expected = {}
+        bus_expected = {}
         os.remove(BASELINE_FILE)
         log("forgot stored baseline. Next apply re-captures from live values.")
     end)
