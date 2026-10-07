@@ -99,6 +99,27 @@ local CONFIG = {
     -- any submix whose modulation destination turns out to be disabled.
     also_write_submix = true,
 
+    -- Sound class volume: a separate gain stage from the modulation buses, and
+    -- the one place a real boost is possible.
+    --
+    -- FSoundClassProperties::Volume is a plain float with no unity ceiling, so
+    -- it is not subject to the 0 dB clamp that makes dialogue_boost useless. It
+    -- also reads back: all 61 classes report Volume=1.0, where submix
+    -- OutputVolume reported nil, so a write here can be verified rather than
+    -- assumed.
+    --
+    -- Parents only again. Class volume multiplies down the hierarchy:
+    --   SC_Voice      -> SC_Commentary, SC_DiegeticVoice, SC_NonDiegeticVoice,
+    --                    SC_Voice_Cinematic
+    --   SC_Characters -> SC_Characters_Foley, SC_Characters_Vox
+    -- so SC_Voice covers the four dialogue children, and SC_Characters_Vox is
+    -- named directly because its parent also carries foley we do not want lifted.
+    class_boost = 2.0,
+    voice_classes = {
+        "Classes/SC_Voice",
+        "Classes/SC_Characters_Vox",
+    },
+
     apply_on_start = true,
 
     -- Dump the audio graph once on the first apply. The dump is where the
@@ -483,6 +504,70 @@ local function set_submix_multiplier(relpath, multiplier)
     return true
 end
 
+-- relpath -> authored class volume, captured before we touch it.
+local class_baseline = {}
+
+-- Writes a sound class volume and reads it back to confirm it took.
+-- This stage is readable, so unlike the submix write there is no need to infer
+-- success from the absence of an error.
+local function set_class_multiplier(relpath, multiplier)
+    local class = resolve(relpath)
+    if not class then
+        vlog("class not loaded: %s", relpath)
+        return false
+    end
+
+    if class_baseline[relpath] == nil then
+        local current
+        pcall(function() current = class.Properties.Volume end)
+        if type(current) ~= "number" then
+            log("%s: Properties.Volume is not readable, skipping", relpath)
+            return false
+        end
+        class_baseline[relpath] = current
+    end
+
+    local target = class_baseline[relpath] * multiplier
+
+    local ok, err = pcall(function()
+        class.Properties.Volume = target
+    end)
+    if not ok then
+        log("class volume write failed on %s: %s", relpath, tostring(err))
+        return false
+    end
+
+    local readback
+    pcall(function() readback = class.Properties.Volume end)
+
+    if type(readback) ~= "number" then
+        log("%s: wrote %.3f but cannot read it back", relpath, target)
+        return false
+    end
+
+    if math.abs(readback - target) > 0.0005 then
+        log("%s: wrote %.3f but it reads %.3f, the write did not stick",
+            relpath, target, readback)
+        return false
+    end
+
+    log("class %s  %.3f -> %.3f  (x%.2f, verified)",
+        relpath:match("([^/]+)$"), class_baseline[relpath], readback, multiplier)
+    return true
+end
+
+local function reset_classes()
+    local restored = 0
+    for relpath, authored in pairs(class_baseline) do
+        local class = resolve(relpath)
+        if class then
+            local ok = pcall(function() class.Properties.Volume = authored end)
+            if ok then restored = restored + 1 end
+        end
+    end
+    return restored
+end
+
 -- Builds the full relpath -> multiplier map for one pass.
 local function targets()
     local map = {}
@@ -514,8 +599,18 @@ local function apply()
             end
         end
 
-        log("applied: %d/%d control buses, %d/%d submix volumes",
-            buses, attempted, submixes, attempted)
+        local classes, class_attempted = 0, 0
+        if CONFIG.class_boost ~= 1.0 then
+            for _, relpath in ipairs(CONFIG.voice_classes) do
+                class_attempted = class_attempted + 1
+                if set_class_multiplier(relpath, CONFIG.class_boost) then
+                    classes = classes + 1
+                end
+            end
+        end
+
+        log("applied: %d/%d control buses, %d/%d submix volumes, %d/%d class volumes",
+            buses, attempted, submixes, attempted, classes, class_attempted)
 
         if buses == 0 then
             applied = false
@@ -542,10 +637,13 @@ local function reset()
             end
         end
 
+        local classes = reset_classes()
+
         applied = false
         expected = {}
         bus_expected = {}
-        log("reset: cleared %d bus overrides, restored %d submix volumes", cleared, restored)
+        log("reset: cleared %d bus overrides, restored %d submix and %d class volumes",
+            cleared, restored, classes)
     end)
 end
 
