@@ -302,6 +302,15 @@ capped at 1.0. `AudioDynamicRange` in the same file selects between the
 
 ## Caveats
 
+- **Tested in game, but not through full races.** The game pushes its own mix
+  changes during a race (`CBM_InRaceVO`, `CBM_PreRaceVO_Ducking`,
+  `CBM_Snapshot_Conversation` and others), and how those interact with these
+  settings is unverified. `lac_verify` after a few races is the way to find out:
+  it reports whether the class volumes still hold.
+- **No guarantee of fixes after a game update.** UE4SS finds the engine by
+  scanning for byte patterns and a patch can move them. That is why this is open
+  source, and why `check-signatures.py` and `check-after-update.ps1` exist: so
+  the next person can tell what broke and fix it without starting over.
 - Multiplayer uses EOS and PlayFab. An injected DLL is a terms of service
   question regardless of there being no anticheat. Treat this as single-player.
 - Every reflection call is `pcall` guarded, so a wrong signature logs instead of
