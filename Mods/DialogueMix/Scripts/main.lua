@@ -32,7 +32,17 @@ local TAG = "[DialogueMix] "
 local CONFIG = {
     -- Multiplier on the voice submixes. 1.0 leaves them alone.
     -- Raise this only if ducking alone is not enough; see the note above.
-    dialogue_boost = 1.5,
+    -- Pinned at 1.0, and it cannot usefully be raised.
+    --
+    -- The buses run through MP_Volume, a SoundModulationParameterVolume whose
+    -- only range property is MinVolume = -60.0. For that parameter type 0 dB is
+    -- unity and also the ceiling: it maps [-60, 0] dB onto [0, 1] normalised and
+    -- clamps. A request of +3.52 dB (x1.5) or +6.02 dB (x2.0) both normalise
+    -- above 1.0 and clamp back to unity, which is why raising this was
+    -- inaudible. Verified by dumping the parameter's real properties.
+    --
+    -- Ducking is therefore the only lever, and it has the full 60 dB to work in.
+    dialogue_boost = 1.0,
 
     -- Multipliers on everything that competes with speech.
     duck = {
@@ -280,6 +290,59 @@ local function modulation_statics()
     return nil
 end
 
+-- Enumerates every property on an object, walking up the class hierarchy.
+--
+-- Guessing field names (UnitMin, MaxValue and friends) came back empty, which
+-- left the important question open: whether this parameter clamps at 0 dB, and
+-- therefore whether a positive boost does anything at all. Asking the reflection
+-- system what the properties actually are answers that without having to judge
+-- a couple of dB by ear.
+local function dump_properties(obj, label)
+    if not valid(obj) then
+        log("%s: <invalid>", label)
+        return
+    end
+
+    local class_name = "<unknown>"
+    pcall(function() class_name = obj:GetClass():GetFName():ToString() end)
+    log("-- %s (%s) --", label, class_name)
+
+    local class = nil
+    pcall(function() class = obj:GetClass() end)
+
+    while valid(class) do
+        local struct_name = "<?>"
+        pcall(function() struct_name = class:GetFName():ToString() end)
+
+        pcall(function()
+            class:ForEachProperty(function(property)
+                local name, ptype = "<?>", "<?>"
+                pcall(function() name = property:GetFName():ToString() end)
+                pcall(function() ptype = property:GetClass():GetFName():ToString() end)
+
+                local rendered = "<unreadable>"
+                local ok, value = pcall(function() return obj[name] end)
+                if ok then
+                    local kind = type(value)
+                    if kind == "number" or kind == "boolean" or kind == "string" then
+                        rendered = tostring(value)
+                    elseif kind == "userdata" then
+                        rendered = valid(value) and full_name(value) or "<userdata>"
+                    else
+                        rendered = "<" .. kind .. ">"
+                    end
+                end
+
+                log("    [%s] %s %s = %s", struct_name, ptype, name, rendered)
+            end)
+        end)
+
+        local parent = nil
+        pcall(function() parent = class:GetSuperStruct() end)
+        class = parent
+    end
+end
+
 -- Reports what a bus's modulation parameter looks like, so the unit space the
 -- bus values live in is read off the game rather than assumed.
 local function describe_parameter(bus)
@@ -301,10 +364,26 @@ end
 
 -- Converts a linear gain multiplier into the value a bus expects.
 -- A volume parameter is in decibels; anything else is treated as normalised.
+local positive_gain_warned = false
+
 local function bus_value_for(multiplier, class_name)
     if class_name and class_name:lower():find("volume") then
         if multiplier <= 0 then return -96.0 end
-        return 20.0 * (math.log(multiplier, 10))
+        local decibels = 20.0 * (math.log(multiplier, 10))
+
+        -- A volume parameter treats 0 dB as unity and as its ceiling, so asking
+        -- for more is silently clamped. Clamp here instead, and say so once, so
+        -- the log stops reporting a gain that the audio engine is discarding.
+        if decibels > 0 then
+            if not positive_gain_warned then
+                positive_gain_warned = true
+                log("x%.2f wants %+.2f dB, but 0 dB is unity and the ceiling for", multiplier, decibels)
+                log("this parameter. Clamping to 0 dB. Duck the maskers instead.")
+            end
+            return 0.0
+        end
+
+        return decibels
     end
     return multiplier
 end
@@ -592,6 +671,21 @@ local function dump()
         log("  AudioModulationStatics: %s",
             statics and full_name(statics) or "<NOT FOUND, buses cannot be driven>")
 
+        -- The decisive section. Everything about whether a positive boost can
+        -- work is in these two objects' real property lists.
+        local voice_bus = resolve("Modulation/Submixes/CB_SubmixVoice")
+        if voice_bus then
+            dump_properties(voice_bus, "CB_SubmixVoice")
+            local parameter
+            pcall(function() parameter = voice_bus.Parameter end)
+            dump_properties(parameter, "its modulation parameter")
+        else
+            log("  CB_SubmixVoice not resolvable, cannot inspect the parameter")
+        end
+
+        local mp_volume = resolve("Modulation/Parameters/MP_Volume")
+        if mp_volume then dump_properties(mp_volume, "MP_Volume") end
+
         log("================ end ================")
     end)
 end
@@ -618,6 +712,24 @@ RegisterConsoleCommandHandler("dmx_forget", function()
         expected = {}
         os.remove(BASELINE_FILE)
         log("forgot stored baseline. Next apply re-captures from live values.")
+    end)
+    return true
+end)
+
+-- dmx_param <relpath> dumps every property on any object, for when a value
+-- needs reading off the game rather than assuming a field name.
+RegisterConsoleCommandHandler("dmx_param", function(_, parameters)
+    local relpath = parameters[1] or "Modulation/Submixes/CB_SubmixVoice"
+    ExecuteInGameThread(function()
+        local obj = resolve(relpath)
+        if not obj then
+            log("could not resolve %s", relpath)
+            return
+        end
+        dump_properties(obj, relpath)
+        local parameter
+        pcall(function() parameter = obj.Parameter end)
+        if valid(parameter) then dump_properties(parameter, relpath .. " parameter") end
     end)
     return true
 end)

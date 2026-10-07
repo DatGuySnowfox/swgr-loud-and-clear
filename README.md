@@ -46,16 +46,54 @@ duck = {
 },
 ```
 
-`dialogue_boost` defaults to `1.0`, meaning the voice submixes are left alone.
-Raise it only if ducking is not enough, and expect diminishing returns: the game
-runs `SE_Main_MixModeCompressor` on the main bus, so pushing voice above its
-authored level feeds that compressor and drags the rest of the mix down
-unevenly. Ducking the maskers buys the same intelligibility with no clipping and
-no pumping.
+### Ducking is the only lever
 
-Run Ctrl+F8 first and read the dump. It prints every loaded submix with its
-parent, so you can see the real routing before trusting any multiplier. There
-are six voice submixes and the parent chain decides which one is worth touching.
+`dialogue_boost` is pinned at `1.0` and cannot usefully be raised. The gain
+buses run through `MP_Volume`, a `SoundModulationParameterVolume`, and dumping
+its real properties shows exactly one range field:
+
+```
+[SoundModulationParameterVolume] FloatProperty MinVolume = -60.0
+```
+
+There is no `MaxVolume`, because for that parameter type **0 dB is both unity
+and the ceiling**. It maps `[-60, 0]` dB onto `[0, 1]` normalised and clamps, so
+a request of +3.52 dB (x1.5) or +6.02 dB (x2.0) normalises above 1.0 and comes
+back as unity. Positive multipliers were silently doing nothing, which is why
+x1.5 and x2.0 sounded identical. `bus_value_for` now clamps at 0 dB and says so
+once rather than logging a gain the engine discards.
+
+Ducking runs the other way and has the full 60 dB to work in, so all of the
+intelligibility comes from the `duck` table. That happens to be the approach
+worth taking anyway: the game runs `SE_Main_MixModeCompressor` on the main bus,
+so lifting voice would feed that compressor and pump the rest of the mix.
+
+Current depths, for reference when tuning:
+
+| Submix | Multiplier | dB |
+| --- | --- | --- |
+| `SS_Music` | 0.60 | -4.44 |
+| `SS_Crowds` | 0.65 | -3.74 |
+| `SS_HighSpeedAirflow` | 0.65 | -3.74 |
+| `SS_NonLocalPlayerEngineAndExhaust` | 0.70 | -3.10 |
+| `SS_LocalPlayerEngine` | 0.75 | -2.50 |
+| `SS_LocalPlayerExhaust` | 0.75 | -2.50 |
+| `SS_Ambience` | 0.80 | -1.94 |
+
+Run Ctrl+F8 and read the dump before trusting any multiplier. It prints every
+loaded submix with its parent, every control bus with its parameter, and the
+full property list of `CB_SubmixVoice` and `MP_Volume`. `dmx_param <relpath>`
+does the same for any object on demand.
+
+Gain on a parent submix is inherited by its children, so target parents only.
+The routing that matters:
+
+```
+SS_DiegeticVoice    -> SS_Voice
+SS_NonDiegeticVoice -> SS_Voice
+SS_Voice            -> SS_Main
+SS_Characters_Vox   -> SS_Characters   (separate branch)
+```
 
 ## Game audio architecture
 
