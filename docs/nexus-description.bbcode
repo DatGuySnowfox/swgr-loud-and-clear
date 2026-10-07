@@ -1,0 +1,99 @@
+[size=5][b]Loud and Clear[/b][/size]
+
+Can't hear a word anyone's saying over the engines? This fixes it.
+
+Galactic Racer has a great deal of dialogue, and a mix that buries most of it. Race chatter, commentary and story voices all compete with engines, crowds, airflow and music, and the in-game speech slider runs out of room long before the problem is solved. Loud and Clear lifts the voices and pulls the noise down around them.
+
+[size=4][b]What it does[/b][/size]
+
+[list]
+[*]Boosts dialogue, commentary and character voices to [b]1.7x[/b]
+[*]Ducks music by 4.4 dB, crowds and airflow by 3.7 dB, rival engines by 3.1 dB, your own engine and exhaust by 2.5 dB, and ambience by 1.9 dB
+[*]Applies itself a few seconds into every launch, with nothing to press
+[*]Everything is tunable, and tunable live from the console with no restart
+[/list]
+
+It only touches volume. No gameplay, saves, visuals or files inside the game are modified.
+
+[size=4][b]Before you install, try this for free[/b][/size]
+
+Options > Audio has an [b]Audio Dynamic Range[/b] setting, and it defaults to [i]Home Cinema[/i], the widest option. Switching it to [i]TV[/i] or [i]Midnight[/i] compresses the mix, which is a smaller version of what this mod does. On some setups that alone is enough. It costs nothing to check, and if it works you don't need a mod at all.
+
+If it isn't enough, carry on.
+
+[size=4][b]Requirements[/b][/size]
+
+[list]
+[*][b]UE4SS with Unreal Engine 5.6 support.[/b] This matters. Older builds fail before any of this loads, with a signature scan that cannot find the engine internals. Packaging date is not a reliable signal: a package rebuilt recently for a different game can still contain a two year old DLL, so check the DLL itself.
+[/list]
+
+[size=4][b]Installation[/b][/size]
+
+[b]Manual[/b]
+[list=1]
+[*]Install UE4SS into [font=Courier New]STAR WARS Galactic Racer\Griffin\Binaries\Win64[/font] (you should end up with [font=Courier New]dwmapi.dll[/font] and a [font=Courier New]ue4ss[/font] folder next to [font=Courier New]SWGR-Win64-Shipping.exe[/font])
+[*]Copy the [font=Courier New]LoudAndClear[/font] folder into [font=Courier New]ue4ss\Mods[/font]
+[*]Add the line [font=Courier New]LoudAndClear : 1[/font] to [font=Courier New]ue4ss\Mods\mods.txt[/font]
+[*]Launch the game
+[/list]
+
+[b]Scripted[/b]
+The GitHub repo includes [font=Courier New]tools\install.ps1[/font], which finds the game under Steam, deploys UE4SS if it isn't already there, copies the mod, and registers it for you.
+
+[size=4][b]Tuning[/b][/size]
+
+Open the UE4SS console and change things while the game runs:
+
+[code]lac_set Submixes/SS_Music 0.45
+lac_set Submixes/SS_Crowds 0.50
+lac_set Submixes/SS_Vehicles 0.55
+lac_reset[/code]
+
+Those take effect immediately. When you find values you like, put them in the [font=Courier New]duck[/font] table at the top of [font=Courier New]Scripts\main.lua[/font] so they persist.
+
+For dialogue level itself, change [font=Courier New]class_boost[/font] in the same table. [font=Courier New]1.0[/font] is untouched, [font=Courier New]2.0[/font] is twice as loud.
+
+[b]Keys:[/b] Ctrl+F7 re-apply, Ctrl+F8 dump the audio graph to the log, Ctrl+F9 restore the game's own levels, Ctrl+R reload after editing.
+
+[b]Commands:[/b] [font=Courier New]lac_apply[/font], [font=Courier New]lac_reset[/font], [font=Courier New]lac_set[/font], [font=Courier New]lac_verify[/font], [font=Courier New]lac_dump[/font], [font=Courier New]lac_param[/font], [font=Courier New]lac_forget[/font]
+
+[size=4][b]Why it ducks instead of only boosting[/b][/size]
+
+For anyone wondering why the numbers look lopsided.
+
+The game's volume controls run through Unreal's Audio Modulation system, and the parameter behind them treats 0 dB as both normal volume and its hard ceiling. Ask it for more and the request is silently discarded. So the obvious approach, turning dialogue up through the same path the in-game slider uses, cannot work no matter what value you put in.
+
+Dialogue is instead lifted at the sound class stage, which is a separate control with no such ceiling, and the noise around it is pulled down through the modulation buses, which have 60 dB of range going downwards. The mod reads its own changes back after writing them and reports in the log whether each one actually took, rather than assuming.
+
+There is also a compressor on the game's main output, so lifting voices a long way would pump the rest of the mix rather than making speech clearer. Pulling the maskers down avoids that, which is why ducking is doing most of the work.
+
+[size=4][b]Compatibility and cautions[/b][/size]
+
+[list]
+[*][b]Treat this as single player.[/b] The game has multiplayer through EOS and PlayFab. There is no anticheat, but an injected DLL is a terms of service question regardless, and the developer's crash reporting may see it.
+[*][b]Re-check after a game update.[/b] UE4SS finds the engine by scanning for byte patterns, and a patch can move them. The repo includes [font=Courier New]check-signatures.py[/font] and [font=Courier New]check-after-update.ps1[/font] to verify before you launch. Also run [font=Courier New]lac_forget[/font] after a patch, since an update can rebalance the mix.
+[*][b]Should not conflict[/b] with other audio mods unless they touch the same submixes or sound classes.
+[/list]
+
+[size=4][b]Troubleshooting[/b][/size]
+
+Everything the mod does is logged to [font=Courier New]ue4ss\UE4SS.log[/font]. A healthy launch looks like this:
+
+[code]PS scan successful
+Starting Lua mod 'LoudAndClear'
+restored 2 authored class volumes
+audio graph is up after 6s, applying
+class SC_Voice  1.000 -> 1.700  (x1.70, verified)
+applied: 7/7 buses ducked, 2/2 class volumes boosted[/code]
+
+[b]No [font=Courier New]LoudAndClear[/font] lines at all[/b], and a [font=Courier New]PS scan timed out[/font] or [font=Courier New]Failed to find GMalloc[/font] above them, means the UE4SS build is too old for this game's engine version.
+
+[b]A fatal error naming another game's executable[/b] means that package left game-specific signature files in [font=Courier New]ue4ss\UE4SS_Signatures[/font]. Move them out of that folder.
+
+[b]Dialogue level unchanged[/b] but the log says [font=Courier New]verified[/font]: sound class volume is sampled when a line starts, so a line already playing won't change. Trigger a new one.
+
+[size=4][b]Source[/b][/size]
+
+[url=https://github.com/DatGuySnowfox/swgr-loud-and-clear]github.com/DatGuySnowfox/swgr-loud-and-clear[/url]
+
+Full notes on the game's audio architecture are in the README, including the submix and sound class routing, which stages respond and which don't, and the reasoning above in more detail. Useful if you want to mod this game's audio yourself.
