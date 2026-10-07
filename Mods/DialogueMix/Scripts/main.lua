@@ -117,7 +117,7 @@ local CONFIG = {
     --   SC_Characters -> SC_Characters_Foley, SC_Characters_Vox
     -- so SC_Voice covers the four dialogue children, and SC_Characters_Vox is
     -- named directly because its parent also carries foley we do not want lifted.
-    class_boost = 2.0,
+    class_boost = 1.7,
     voice_classes = {
         "Classes/SC_Voice",
         "Classes/SC_Characters_Vox",

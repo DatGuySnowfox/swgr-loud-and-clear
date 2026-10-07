@@ -1,226 +1,274 @@
 # SWGR Dialogue Mix
 
-A UE4SS Lua mod that makes dialogue intelligible in STAR WARS: Galactic Racer by
-ducking the submixes that mask speech, rather than by boosting speech itself.
+A UE4SS Lua mod for STAR WARS: Galactic Racer that makes dialogue intelligible
+during races. It lifts the dialogue sound classes and ducks the music, crowds,
+airflow and engines that bury them.
+
+Defaults: dialogue at **1.7x**, maskers cut by **2 to 4.5 dB**. Both tunable, and
+tunable live without restarting the game.
 
 ## Install
 
+Needs a UE4SS build with UE 5.6 support. See
+[Troubleshooting](#ue4ss-fails-to-start) if yours is older.
+
 ```powershell
-cd C:\temp\GIT\swgr-dialogue-mix
+git clone https://github.com/DatGuySnowfox/swgr-dialogue-mix
+cd swgr-dialogue-mix
 .\tools\install.ps1
 ```
 
-The installer needs a UE4SS archive. It defaults to the Star Wars Zero Company
-build in `~\Downloads`, which is a UE 5.6-configured 2026-09 build and the right
-vintage for this game. Override with `-UE4SSZip <path>`.
+The installer finds the game under Steam, deploys UE4SS if it is not already
+there, copies the mod, and registers it in both `mods.txt` and `mods.json`.
+Useful flags:
 
-Then launch the game and press:
+| Flag | Effect |
+| --- | --- |
+| `-ModOnly` | Refresh just the Lua. Use this after editing config. |
+| `-Force` | Replace an existing UE4SS deployment, backing the old one up. |
+| `-GamePath <dir>` | Non-default install location. |
+| `-UE4SSZip <file>` | Point at a specific UE4SS archive. |
+
+Remove it with `.\tools\uninstall.ps1`, or `-All` to take UE4SS out too.
+
+## Using it
+
+It applies itself a few seconds after the audio graph comes up, every launch.
+There is nothing to press to get the normal behaviour.
+
+### Keys
 
 | Key | Action |
 | --- | --- |
-| Ctrl+F8 | dump the live audio graph to `UE4SS.log` |
-| Ctrl+F7 | apply the mix changes |
-| Ctrl+F9 | restore authored levels |
+| Ctrl+F7 | Re-apply now |
+| Ctrl+F8 | Dump the audio graph to `UE4SS.log` |
+| Ctrl+F9 | Restore the game's own levels |
+| Ctrl+R | Reload the mod after editing `main.lua` |
 
-Console commands are also registered: `dmx_dump`, `dmx_apply`, `dmx_reset`, and
-`dmx_set Submixes/SS_Music 0.5` for live tuning without a restart.
+### Console commands
 
-To remove: `.\tools\uninstall.ps1 -All`.
+Open the UE4SS console (enable it with `ConsoleEnabled = 1` in
+`UE4SS-settings.ini`) and use:
+
+| Command | Action |
+| --- | --- |
+| `dmx_apply` | Re-apply |
+| `dmx_reset` | Back to the game's levels |
+| `dmx_set <relpath> <multiplier>` | Change one submix live |
+| `dmx_verify` | Check the values still hold |
+| `dmx_dump` | Dump the audio graph |
+| `dmx_param <relpath>` | Print every property on an object |
+| `dmx_forget` | Discard stored authored values and re-capture |
+
+`dmx_set` is the fast way to tune by ear, no reload needed:
+
+```
+dmx_set Submixes/SS_Music 0.45
+dmx_set Submixes/SS_Crowds 0.50
+```
+
+Those are not saved. Put the values you settle on into `main.lua`.
 
 ## Tuning
 
-Edit the `CONFIG` table at the top of
-`Mods\DialogueMix\Scripts\main.lua`. Multipliers are relative to each submix's
-authored `OutputVolume`, captured before the mod touches anything, so `1.0`
-always means "as shipped".
+Two dials, in the `CONFIG` table at the top of
+`Mods\DialogueMix\Scripts\main.lua`.
+
+### Dialogue level
+
+```lua
+class_boost = 1.7,
+```
+
+A plain linear multiplier on the dialogue sound classes. `1.0` is untouched,
+`2.0` is twice as loud. This is the dial for "I still cannot hear them".
+
+Pushing it far will eventually feed `SE_Main_MixModeCompressor` on the main bus
+and start pumping the rest of the mix, so if high values sound harsh rather than
+louder, take some of it from the duck table instead.
+
+### Separation
 
 ```lua
 duck = {
-    ["Submixes/SS_Music"]                          = 0.60,
-    ["Submixes/SS_Crowds"]                         = 0.65,
-    ["Submixes/SS_HighSpeedAirflow"]               = 0.65,
-    ["Submixes/SS_NonLocalPlayerEngineAndExhaust"] = 0.70,
-    ["Submixes/SS_LocalPlayerEngine"]              = 0.75,
-    ["Submixes/SS_LocalPlayerExhaust"]             = 0.75,
-    ["Submixes/SS_Ambience"]                       = 0.80,
-},
+    ["Submixes/SS_Music"]                          = 0.60,  -- -4.44 dB
+    ["Submixes/SS_Crowds"]                         = 0.65,  -- -3.74 dB
+    ["Submixes/SS_HighSpeedAirflow"]               = 0.65,  -- -3.74 dB
+    ["Submixes/SS_NonLocalPlayerEngineAndExhaust"] = 0.70,  -- -3.10 dB
+    ["Submixes/SS_LocalPlayerEngine"]              = 0.75,  -- -2.50 dB
+    ["Submixes/SS_LocalPlayerExhaust"]             = 0.75,  -- -2.50 dB
+    ["Submixes/SS_Ambience"]                       = 0.80,  -- -1.94 dB
+}
 ```
 
-### Ducking is the only lever
+Multipliers relative to the game's authored level, converted to dB internally.
+There is 60 dB of range, so these can go much deeper. Engines below about 0.50
+costs the racing noticeable weight, which is a real trade rather than a free win.
 
-`dialogue_boost` is pinned at `1.0` and cannot usefully be raised. The gain
-buses run through `MP_Volume`, a `SoundModulationParameterVolume`, and dumping
-its real properties shows exactly one range field:
+Add any submix from `Audio/Mixing/Submixes/`. Gain on a parent is inherited by
+its children, so name parents, not both.
+
+### After editing
+
+```powershell
+.\tools\install.ps1 -ModOnly
+```
+
+Then Ctrl+R in game. With `EnableAutoReloadingLuaMods = 1` it often reloads on
+save by itself, but the watcher is inconsistent, so do not rely on it.
+
+## How it works
+
+Volume in this game is reachable at several stages and **only two of them do
+anything useful**. Both are used, for different jobs.
+
+**Sound class volume, for boosting.** `FSoundClassProperties::Volume` is a plain
+float with no unity ceiling, applied to `SC_Voice` and `SC_Characters_Vox`. It
+also reads back, so the mod writes it, reads it, and logs `verified` rather than
+assuming the write landed.
+
+**Control buses, for ducking.** Each submix has a `CB_Submix*` control bus wired
+to its `OutputVolumeModulation` destination, driven through
+`UAudioModulationStatics::SetGlobalBusMixValue`. Values are in decibels, so
+multipliers convert with `20*log10`.
+
+### Why boosting goes through sound classes and not buses
+
+The buses run through `MP_Volume`, a `SoundModulationParameterVolume`. Dumping
+its real properties shows one range field:
 
 ```
 [SoundModulationParameterVolume] FloatProperty MinVolume = -60.0
 ```
 
-There is no `MaxVolume`, because for that parameter type **0 dB is both unity
-and the ceiling**. It maps `[-60, 0]` dB onto `[0, 1]` normalised and clamps, so
-a request of +3.52 dB (x1.5) or +6.02 dB (x2.0) normalises above 1.0 and comes
-back as unity. Positive multipliers were silently doing nothing, which is why
-x1.5 and x2.0 sounded identical. `bus_value_for` now clamps at 0 dB and says so
-once rather than logging a gain the engine discards.
+No `MaxVolume`, because 0 dB is both unity and the ceiling for that parameter
+type: it maps `[-60, 0]` dB onto `[0, 1]` normalised and clamps. A request of
++3.52 dB or +6.02 dB normalises above 1.0 and comes back as unity. So a bus
+boost is silently discarded, while a bus cut has the full 60 dB available.
 
-Ducking runs the other way and has the full 60 dB to work in, so all of the
-intelligibility comes from the `duck` table. That happens to be the approach
-worth taking anyway: the game runs `SE_Main_MixModeCompressor` on the main bus,
-so lifting voice would feed that compressor and pump the rest of the mix.
+This is arithmetic inside the parameter, not an access restriction, so a native
+DLL would hit the same clamp. Sound class volume sidesteps it by being a
+different stage entirely.
 
-Current depths, for reference when tuning:
+### Stages that do not work
 
-| Submix | Multiplier | dB |
-| --- | --- | --- |
-| `SS_Music` | 0.60 | -4.44 |
-| `SS_Crowds` | 0.65 | -3.74 |
-| `SS_HighSpeedAirflow` | 0.65 | -3.74 |
-| `SS_NonLocalPlayerEngineAndExhaust` | 0.70 | -3.10 |
-| `SS_LocalPlayerEngine` | 0.75 | -2.50 |
-| `SS_LocalPlayerExhaust` | 0.75 | -2.50 |
-| `SS_Ambience` | 0.80 | -1.94 |
+Writing submix `OutputVolume` via `SetSubmixOutputVolume` accomplishes nothing
+here. The call succeeds, but the property reads back as `nil` on all 62
+submixes and nothing changes audibly, because the modulation destination drives
+the gain instead. `also_write_submix` is off by default for that reason.
 
-Run Ctrl+F8 and read the dump before trusting any multiplier. It prints every
-loaded submix with its parent, every control bus with its parameter, and the
-full property list of `CB_SubmixVoice` and `MP_Volume`. `dmx_param <relpath>`
-does the same for any object on demand.
+### Routing that matters
 
-Gain on a parent submix is inherited by its children, so target parents only.
-The routing that matters:
+Gain on a parent is inherited, so targeting a parent and its children compounds
+the change:
 
 ```
-SS_DiegeticVoice    -> SS_Voice
-SS_NonDiegeticVoice -> SS_Voice
-SS_Voice            -> SS_Main
-SS_Characters_Vox   -> SS_Characters   (separate branch)
+SC_Voice      -> SC_Commentary, SC_DiegeticVoice, SC_NonDiegeticVoice, SC_Voice_Cinematic
+SC_Characters -> SC_Characters_Foley, SC_Characters_Vox
+SC_Main       -> SC_Music, SC_SFX, SC_Voice, SC_UI, SC_Cinematic, SC_FinishLine
+
+SS_DiegeticVoice, SS_NonDiegeticVoice -> SS_Voice -> SS_Main
+SS_Characters_Vox -> SS_Characters -> SS_SFX
 ```
 
-## Game audio architecture
+`SC_Voice` covers the four dialogue children. `SC_Characters_Vox` is named
+directly because its parent also carries foley that should not be lifted.
 
-Reconnaissance notes, so this does not have to be rediscovered.
+### baseline.txt
 
-**Engine.** Unreal Engine, project codename `Griffin`, shipping exe
-`Griffin\Binaries\Win64\SWGR-Win64-Shipping.exe`. The version string is stripped
-(`Auto-381121`), but CEF3 128.4.13 / Chromium 128, IoStore TOC version 8,
-`NNERuntimeORT` and PCG put it at UE 5.6 or newer. UE4SS covers 5.4 through 5.8.
+The authored volumes are captured before the first write and saved to
+`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\DialogueMix-baseline.txt`.
 
-**No anticheat.** No EasyAntiCheat, no BattlEye. EOS SDK for online, PlayFab for
-multiplayer sessions, Sentry for crash reporting. Worth knowing that an injected
-DLL may surface in the developer's crash telemetry.
+This exists because a hot reload hands the mod a fresh Lua state. Without the
+file it would read the already-boosted value back as the authored one and
+multiply again, walking 1.7 to 2.9 to 4.9 across three reloads. Saving the first
+capture makes re-applying idempotent.
 
-**Native Unreal audio, no middleware.** No Wwise, no FMOD. The exe confirms
-`AudioModulation`, `SoundControlBus` and `MetasoundEngine`. This is what makes
-the whole approach viable: everything is reachable through UObject reflection.
+It lives in the save directory rather than next to the script because the mod
+folder is under Program Files, which is not writable without elevation.
 
-**Mix topology.** 61 SoundClasses in `/Game/Griffin/Audio/Mixing/Classes/`, 62
-submixes in `Submixes/`, and a full Audio Modulation control bus layer:
+Run `dmx_forget` to discard it and re-capture. Worth doing after a game patch,
+which can change the authored values and leave the file stale.
 
-- Voice classes: `SC_Voice`, `SC_Voice_Cinematic`, `SC_Characters_Vox`,
-  `SC_DiegeticVoice`, `SC_NonDiegeticVoice`, `SC_Commentary`, `SC_Cinematic`
-- Matching submixes under `Submixes/` with an `SS_` prefix
-- Settings buses: `CB_Settings_DialogueVolume` plus Main, Music, Sfx and UI
-  siblings, all bound to parameter `MP_Volume`, collected in `CBM_Settings`
-- Per-submix buses: `CB_Submix*`, one per submix
-- Gameplay ducking already exists: `CBM_InRaceVO`, `CBM_PreRaceVO_Ducking`,
-  `CBM_Snapshot_Conversation`, `CBM_CrashReationVO_DuckCrashing`,
-  `CB_KillInConversation`
+## Troubleshooting
 
-`Griffin/Plugins/FuseMixingControl` is a MIDI control surface for the audio
-team's dev builds (`BP_MIDIMixingControl`). It is not part of the runtime
-settings path and does not interfere.
+### Dialogue level does not change
 
-**Why the submix stage and not the control bus.** The in-game speech slider
-drives `CB_Settings_DialogueVolume` through `MP_Volume`. Audio Modulation
-parameters normalise to 0..1, so values above the slider maximum are likely to
-be normalised away. `SetSubmixOutputVolume` and `USoundClass::Properties.Volume`
-are separate, unclamped stages, which is why the mod works there.
-
-**Paks are unencrypted.** Encryption key GUID is zero and container flags are
-`Compressed | Indexed` with no `Encrypted` bit, so FModel opens
-`Griffin\Content\Paks` with no AES key if you want to inspect the assets
-directly.
-
-## UE4SS version requirement
-
-**This needs a UE4SS build with UE 5.6 support.** Older builds fail before any
-Lua runs, with a signature scan that cannot find the engine internals:
+Check `UE4SS.log` for the apply summary:
 
 ```
-UE4SS - v3.0.1 Beta
+applied: 7/7 control buses, 0/0 submix volumes, 2/2 class volumes
+class SC_Voice  1.000 -> 1.700  (x1.70, verified)
+```
+
+`verified` means the write landed and read back. If a class reports that the
+value did not stick, or `0/2 class volumes`, the names or paths are wrong, and
+Ctrl+F8 will show what is actually loaded.
+
+Sound class volume is sampled when a voice starts, so a line already playing
+when you reload will not change. Trigger a new one.
+
+### UE4SS fails to start
+
+```
 [PS] Failed to find GMalloc
 [PS] Failed to find FName::ToString: found 2 unique values
-[PS] Failed to find FUObjectHashTables::Get()
-[PS] Failed to find GNatives
 Fatal Error: PS scan timed out
 ```
 
-If the log looks like that, the build is too old. `EngineVersionOverride` in
-`UE4SS-settings.ini` does not help, because the problem is the scanner not
-knowing the newer engine layouts, not a misreported version. Get a current
-release from https://github.com/UE4SS-RE/RE-UE4SS/releases.
+The build is too old for this engine version. `EngineVersionOverride` will not
+fix it, because the problem is a scanner that does not know the newer layouts.
 
-Packaging date is not a reliable signal here. A build repackaged in 2026 for a
-different game can still contain a 2024-era DLL. Check the DLL, not the zip.
+Packaging date is not a reliable signal. A Vortex or Nexus package rebuilt in
+2026 for another game can still contain a 2024 DLL, so check the DLL itself.
 
-## Hot reload
+### UE4SS starts then dies on a signature file
 
-Lua mods reload without restarting the game. In `UE4SS-settings.ini`:
-
-```ini
-EnableHotReloadSystem = 1      ; Ctrl+R reloads all mods
-HotReloadKey = R
-EnableAutoReloadingLuaMods = 1 ; reload automatically on file save
+```
+Fatal Error: [SWZC StaticConstructObject] cannot read adjacent SWZeroCompany.exe
 ```
 
-Vortex-packaged UE4SS ships with both set to `0`, so turn them on. Note that
-Vortex may revert its managed files on redeploy.
+Game-specific AOB overrides left in `ue4ss/UE4SS_Signatures/` from another
+game's package. They hard-reject when their own exe is absent. Move them out of
+that folder and the generic scanner takes over.
 
-With auto-reload on, editing `main.lua` in the deployed
-`ue4ss\Mods\DialogueMix\Scripts\` folder applies on save. Keep the repo copy in
-step with `.\tools\install.ps1 -ModOnly`, or edit the repo and run that to push
-the change over.
+## Game audio architecture
 
-### Why baseline.txt exists
+Reference notes, so this does not have to be rediscovered.
 
-A reload hands the mod a fresh Lua state, so in-memory state is lost. That is a
-problem for the authored submix volumes specifically: the submixes are still
-ducked at reload time, so re-capturing from the live value would treat an
-already-reduced volume as "authored" and multiply it again. `SS_Music` at 0.60
-would walk down to 0.36, then 0.216, across three reloads.
+**Engine.** Unreal Engine, project codename `Griffin`, shipping exe
+`Griffin\Binaries\Win64\SWGR-Win64-Shipping.exe`. Version string is stripped
+(`Auto-381121`), but CEF3 128.4.13 / Chromium 128, IoStore TOC version 8,
+`NNERuntimeORT` and PCG put it at UE 5.6 or newer.
 
-So the first capture is written to `baseline.txt` next to the script and read
-back on load. Re-applying then becomes idempotent, which also makes the startup
-pass safe to run repeatedly.
+**No anticheat.** No EasyAntiCheat, no BattlEye. EOS SDK for online, PlayFab for
+multiplayer, Sentry for crash reporting, so an injected DLL may surface in the
+developer's crash telemetry.
 
-Run `dmx_forget` to discard it and re-capture, which resets the submixes to
-their stored values first. Worth doing after a game patch, since a patch can
-change the authored volumes and make the stored file stale.
+**Native Unreal audio, no middleware.** No Wwise, no FMOD. The exe confirms
+`AudioModulation`, `SoundControlBus` and `MetasoundEngine`.
 
-## Persistence
+**Mix topology.** 61 sound classes in `/Game/Griffin/Audio/Mixing/Classes/`, 62
+submixes in `Submixes/`, and a full Audio Modulation layer: one `CB_Submix*` bus
+per submix, settings buses (`CB_Settings_DialogueVolume` and Main, Music, Sfx, UI
+siblings) all bound to `MP_Volume`, and gameplay mixes including `CBM_InRaceVO`,
+`CBM_PreRaceVO_Ducking` and `CBM_Snapshot_Conversation`.
 
-The mod does not fight the game for these values, and probably does not need to.
+`Griffin/Plugins/FuseMixingControl` is a MIDI control surface for the audio
+team's dev builds and is not part of the runtime settings path.
 
-`SetSubmixOutputVolume` writes the base `OutputVolume`. The game's settings
-sliders and `CBM_*` snapshots drive `OutputVolumeModulation`, a separate
-modulation destination on the same submix. Both symbols exist in the exe as
-distinct fields, and they are combined at mix time rather than overwriting one
-another, so a control bus push should not clear our write.
+**Paks are unencrypted.** Encryption key GUID is zero, container flags are
+`Compressed | Indexed`, so FModel opens `Griffin\Content\Paks` with no AES key.
 
-Rather than assume that, the mod verifies it. Every `verify_seconds` it reads
-the values back and re-applies only what actually moved, logging any drift. If
-the log stays quiet across a few sessions, set `verify_seconds = 0` and the mod
-becomes a single pass at startup. `dmx_verify` runs the check on demand.
-
-True persistence without UE4SS at all would mean a pak that replaces the submix
-assets outright. That is not a short path here: the exe contains no `~mods` or
-`LogicMods` mount point in either ASCII or UTF-16, so there is no supported drop
-folder, and cooking replacement assets would need a matching UE 5.6 editor.
+**In-game settings.** The options menu has a speech slider (`DA_SpeechVolume`),
+stored as `DialogueVolume` under `[/Script/Griffin.GfnUserSettingsPC]` in
+`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\Config\Windows\GameUserSettings.ini`.
+It maxes at 1.0. `AudioDynamicRange` there is also worth trying before modding:
+`TV` or `Midnight` compress the mix and may be enough on their own.
 
 ## Caveats
 
-- Multiplayer is present and uses EOS and PlayFab. An injected DLL is a terms of
-  service question regardless of there being no anticheat. Consider this a
-  single-player tool.
-- `SetSubmixOutputVolume` is called through a guarded `pcall`. The reflected
-  signature is what matters, not the assumption about it, so verify against the
-  Ctrl+F8 dump before relying on any of this.
+- Multiplayer uses EOS and PlayFab. An injected DLL is a terms of service
+  question regardless of there being no anticheat. Treat this as single-player.
+- Every reflection call is `pcall` guarded, so a wrong signature logs instead of
+  crashing, but this writes to live audio objects in a running game.
