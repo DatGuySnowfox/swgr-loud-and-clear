@@ -1,0 +1,4 @@
+# local UE4SS deployments and logs
+*.log
+ue4ss.backup-*/
+/dist/
