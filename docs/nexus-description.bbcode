@@ -39,9 +39,9 @@ lac_set Submixes/SS_Crowds 0.50
 lac_set Submixes/SS_Vehicles 0.55
 lac_reset[/code]
 
-Those take effect immediately. When you find values you like, put them in the [font=Courier New]duck[/font] table at the top of [font=Courier New]Scripts\main.lua[/font] so they persist.
+Those take effect immediately. When you find values you like, put them in the [font=Courier New]duck[/font] table in the [font=Courier New]CONFIG[/font] block at the top of [font=Courier New]Scripts\main.lua[/font] so they persist.
 
-For dialogue level itself, change [font=Courier New]class_boost[/font] in the same table. [font=Courier New]1.0[/font] is untouched, [font=Courier New]2.0[/font] is twice as loud.
+For dialogue level itself, change [font=Courier New]class_boost[/font], which sits just above [font=Courier New]duck[/font] in the same [font=Courier New]CONFIG[/font] block. [font=Courier New]1.0[/font] is untouched, [font=Courier New]2.0[/font] is twice as loud.
 
 [b]Keys:[/b] Ctrl+F7 re-apply, Ctrl+F8 dump the audio graph to the log, Ctrl+F9 restore the game's own levels, Ctrl+R reload after editing.
 
