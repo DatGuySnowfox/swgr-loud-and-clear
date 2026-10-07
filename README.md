@@ -155,7 +155,7 @@ different stage entirely.
 Writing submix `OutputVolume` via `SetSubmixOutputVolume` accomplishes nothing
 here. The call succeeds, but the property reads back as `nil` on all 62
 submixes and nothing changes audibly, because the modulation destination drives
-the gain instead. `also_write_submix` is off by default for that reason.
+the gain instead. That path was in the mod originally and has been removed.
 
 ### Routing that matters
 
@@ -264,7 +264,7 @@ reload back off. `check-after-update.ps1` checks for both.
 Check `UE4SS.log` for the apply summary:
 
 ```
-applied: 7/7 control buses, 0/0 submix volumes, 2/2 class volumes
+applied: 7/7 buses ducked, 2/2 class volumes boosted
 class SC_Voice  1.000 -> 1.700  (x1.70, verified)
 ```
 
