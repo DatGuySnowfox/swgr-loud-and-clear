@@ -609,12 +609,17 @@ local function apply()
     applied = true
 
     ExecuteInGameThread(function()
-        local buses, submixes, attempted = 0, 0, 0
+        local buses, attempted = 0, 0
+        -- Counted separately. Sharing the bus counter made the summary read
+        -- "0/7 submix volumes" when also_write_submix is off, which looks like
+        -- seven failures rather than nothing attempted.
+        local submixes, submix_attempted = 0, 0
 
         for relpath, multiplier in pairs(targets()) do
             attempted = attempted + 1
             if set_bus_multiplier(relpath, multiplier) then buses = buses + 1 end
             if CONFIG.also_write_submix then
+                submix_attempted = submix_attempted + 1
                 if set_submix_multiplier(relpath, multiplier) then submixes = submixes + 1 end
             end
         end
@@ -630,7 +635,7 @@ local function apply()
         end
 
         log("applied: %d/%d control buses, %d/%d submix volumes, %d/%d class volumes",
-            buses, attempted, submixes, attempted, classes, class_attempted)
+            buses, attempted, submixes, submix_attempted, classes, class_attempted)
 
         if buses == 0 then
             applied = false
