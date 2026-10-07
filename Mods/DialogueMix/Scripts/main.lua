@@ -32,7 +32,7 @@ local TAG = "[DialogueMix] "
 local CONFIG = {
     -- Multiplier on the voice submixes. 1.0 leaves them alone.
     -- Raise this only if ducking alone is not enough; see the note above.
-    dialogue_boost = 1.0,
+    dialogue_boost = 1.5,
 
     -- Multipliers on everything that competes with speech.
     duck = {
@@ -54,11 +54,18 @@ local CONFIG = {
         "Submixes/SS_Commentary",
     },
 
-    -- The game reasserts its own mix whenever settings change or a control bus
-    -- mix snapshot is pushed (CBM_Settings, CBM_Race, CBM_Snapshot_Conversation
-    -- and friends). Re-applying on a timer keeps our offsets on top.
-    apply_on_start  = true,
-    reapply_seconds = 10,
+    apply_on_start = true,
+
+    -- How often to read our submix volumes back and check they still hold.
+    -- This is a verification pass, not a blind rewrite: it only re-applies when
+    -- a value has actually drifted, and logs when that happens.
+    --
+    -- The expectation is that it never does. SetSubmixOutputVolume writes the
+    -- base OutputVolume, while the game's control buses drive the separate
+    -- OutputVolumeModulation destination, so the two should not collide. If the
+    -- log never reports drift over a few sessions, set this to 0 and the mod
+    -- becomes a one-shot at startup.
+    verify_seconds = 30,
 
     verbose = true,
 }
@@ -120,7 +127,10 @@ end
 
 -- relpath -> authored OutputVolume, captured once, before we touch anything.
 local baseline = {}
+-- relpath -> what we last wrote, so the verify pass can detect drift.
+local expected = {}
 local applied = false
+local drift_reported = false
 
 local function world_context()
     local ok, world = pcall(UEHelpers.GetWorldContextObject)
@@ -165,6 +175,7 @@ local function set_submix_multiplier(relpath, multiplier)
         return false
     end
 
+    expected[relpath] = target
     vlog("%s  %.3f -> %.3f  (x%.2f)", relpath, baseline[relpath], target, multiplier)
     return true
 end
@@ -207,8 +218,43 @@ local function reset()
             end
         end
         applied = false
+        expected = {}
         log("restored %d submixes to authored levels", restored)
     end)
+end
+
+-- Reads our submix volumes back and re-applies only the ones that moved.
+-- Returns the number that had drifted, which is the number we care about: if it
+-- stays at zero across sessions, nothing in the game contests these writes and
+-- the verify loop can be switched off entirely.
+local function verify()
+    local drifted = 0
+
+    for relpath, want in pairs(expected) do
+        local submix = resolve(relpath)
+        if submix then
+            local actual = read_float(submix, "OutputVolume")
+            -- Float comparison needs slack; anything this close is our own value.
+            if actual and math.abs(actual - want) > 0.0005 then
+                drifted = drifted + 1
+                log("drift on %s: expected %.3f, found %.3f. Re-applying.",
+                    relpath, want, actual)
+                local multiplier = CONFIG.duck[relpath] or CONFIG.dialogue_boost
+                set_submix_multiplier(relpath, multiplier)
+            end
+        end
+    end
+
+    if drifted == 0 and not drift_reported then
+        drift_reported = true
+        log("verify: all %d submixes still hold their values.",
+            (function() local n = 0 for _ in pairs(expected) do n = n + 1 end return n end)())
+        log("verify: if this stays quiet, set verify_seconds = 0 to go one-shot.")
+    elseif drifted > 0 then
+        drift_reported = false
+    end
+
+    return drifted
 end
 
 ----------------------------------------------------------------------
@@ -304,6 +350,14 @@ RegisterConsoleCommandHandler("dmx_apply", function() apply() return true end)
 RegisterConsoleCommandHandler("dmx_dump", function() dump() return true end)
 RegisterConsoleCommandHandler("dmx_reset", function() reset() return true end)
 
+RegisterConsoleCommandHandler("dmx_verify", function()
+    ExecuteInGameThread(function()
+        local drifted = verify()
+        log("verify: %d of our submixes had drifted", drifted)
+    end)
+    return true
+end)
+
 RegisterConsoleCommandHandler("dmx_set", function(_, parameters)
     if #parameters < 2 then
         log("usage: dmx_set Submixes/SS_Music 0.5")
@@ -346,9 +400,14 @@ if CONFIG.apply_on_start then
             return false
         end
 
-        -- Applied. Settle into the re-assert cadence.
-        if waited % CONFIG.reapply_seconds == 0 then
-            apply()
+        -- Applied. Either stop here, or settle into the verify cadence.
+        if CONFIG.verify_seconds <= 0 then
+            log("one-shot mode, verify loop exiting")
+            return true
+        end
+
+        if waited % CONFIG.verify_seconds == 0 then
+            ExecuteInGameThread(function() verify() end)
         end
         return false
     end)

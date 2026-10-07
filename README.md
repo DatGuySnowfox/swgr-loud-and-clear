@@ -3,29 +3,6 @@
 A UE4SS Lua mod that makes dialogue intelligible in STAR WARS: Galactic Racer by
 ducking the submixes that mask speech, rather than by boosting speech itself.
 
-## Try these before installing anything
-
-The mod is the third thing to reach for, not the first.
-
-**1. Change the dynamic range preset.** Options > Audio. The game ships four
-dynamic range mixes (`CBM_DynamicRangeHeadphones`, `CBM_DynamicRangeMidnight`,
-`CBM_DynamicRangeTV`, `CBM_DynamicRangeSoundSystem`) and the default is
-`HomeCinema`, which is the widest. `TV` or `Midnight` compress the mix, which is
-exactly the problem being solved here. On a racing game where engines and crowds
-are what bury the voices, this alone may be enough.
-
-**2. Push the speech slider past its maximum.** With the game closed, edit:
-
-```
-%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\Config\Windows\GameUserSettings.ini
-```
-
-Under `[/Script/Griffin.GfnUserSettingsPC]`, change `DialogueVolume=1.000000` to
-`2.000000`. The game may clamp it on load and rewrite the file, in which case
-this does not work, but it costs nothing to find out.
-
-If neither helps, install the mod.
-
 ## Install
 
 ```powershell
@@ -125,14 +102,53 @@ are separate, unclamped stages, which is why the mod works there.
 `Griffin\Content\Paks` with no AES key if you want to inspect the assets
 directly.
 
+## UE4SS version requirement
+
+**This needs a UE4SS build with UE 5.6 support.** Older builds fail before any
+Lua runs, with a signature scan that cannot find the engine internals:
+
+```
+UE4SS - v3.0.1 Beta
+[PS] Failed to find GMalloc
+[PS] Failed to find FName::ToString: found 2 unique values
+[PS] Failed to find FUObjectHashTables::Get()
+[PS] Failed to find GNatives
+Fatal Error: PS scan timed out
+```
+
+If the log looks like that, the build is too old. `EngineVersionOverride` in
+`UE4SS-settings.ini` does not help, because the problem is the scanner not
+knowing the newer engine layouts, not a misreported version. Get a current
+release from https://github.com/UE4SS-RE/RE-UE4SS/releases.
+
+Packaging date is not a reliable signal here. A build repackaged in 2026 for a
+different game can still contain a 2024-era DLL. Check the DLL, not the zip.
+
+## Persistence
+
+The mod does not fight the game for these values, and probably does not need to.
+
+`SetSubmixOutputVolume` writes the base `OutputVolume`. The game's settings
+sliders and `CBM_*` snapshots drive `OutputVolumeModulation`, a separate
+modulation destination on the same submix. Both symbols exist in the exe as
+distinct fields, and they are combined at mix time rather than overwriting one
+another, so a control bus push should not clear our write.
+
+Rather than assume that, the mod verifies it. Every `verify_seconds` it reads
+the values back and re-applies only what actually moved, logging any drift. If
+the log stays quiet across a few sessions, set `verify_seconds = 0` and the mod
+becomes a single pass at startup. `dmx_verify` runs the check on demand.
+
+True persistence without UE4SS at all would mean a pak that replaces the submix
+assets outright. That is not a short path here: the exe contains no `~mods` or
+`LogicMods` mount point in either ASCII or UTF-16, so there is no supported drop
+folder, and cooking replacement assets would need a matching UE 5.6 editor.
+
 ## Caveats
 
 - Multiplayer is present and uses EOS and PlayFab. An injected DLL is a terms of
   service question regardless of there being no anticheat. Consider this a
   single-player tool.
-- The game reasserts its own mix when settings change or a control bus mix
-  snapshot is pushed, so the mod re-applies on a 10 second timer. Expect the
-  first second or two of a snapshot transition to use the game's levels.
 - `SetSubmixOutputVolume` is called through a guarded `pcall`. The reflected
   signature is what matters, not the assumption about it, so verify against the
   Ctrl+F8 dump before relying on any of this.
