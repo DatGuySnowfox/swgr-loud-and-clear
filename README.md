@@ -1,16 +1,17 @@
 # Loud and Clear
 
 A UE4SS Lua mod for STAR WARS: Galactic Racer that makes dialogue intelligible
-during races. It lifts the dialogue sound classes and ducks the music, crowds,
+during races. It boosts the dialogue sound classes and ducks the music, crowds,
 airflow and engines that bury them.
 
-Defaults: dialogue at **1.7x**, maskers cut by **2 to 4.5 dB**. Both tunable, and
-tunable live without restarting the game.
+Defaults: dialogue at **1.7x**, maskers cut by **1.9 to 4.4 dB**. Both tunable,
+live, without restarting the game.
 
 ## Install
 
 Needs a UE4SS build with UE 5.6 support. See
-[Troubleshooting](#ue4ss-fails-to-start) if yours is older.
+[UE4SS fails to start](#ue4ss-fails-to-start) if yours is older, because that was
+the single biggest time sink in building this.
 
 ```powershell
 git clone https://github.com/DatGuySnowfox/swgr-loud-and-clear
@@ -19,24 +20,22 @@ cd swgr-loud-and-clear
 ```
 
 The installer finds the game under Steam, deploys UE4SS if it is not already
-there, copies the mod, and registers it in both `mods.txt` and `mods.json`.
-Useful flags:
+there, copies the mod, registers it in `mods.txt` and `mods.json`, and installs
+the AOB signatures from `Signatures/`.
 
 | Flag | Effect |
 | --- | --- |
-| `-ModOnly` | Refresh just the Lua. Use this after editing config. |
+| `-ModOnly` | Refresh just the Lua and signatures. Use after editing config. |
 | `-Force` | Replace an existing UE4SS deployment, backing the old one up. |
 | `-GamePath <dir>` | Non-default install location. |
 | `-UE4SSZip <file>` | Point at a specific UE4SS archive. |
 
-Remove it with `.\tools\uninstall.ps1`, or `-All` to take UE4SS out too.
+Remove with `.\tools\uninstall.ps1`, or `-All` to take UE4SS out too.
 
 ## Using it
 
 It applies itself a few seconds after the audio graph comes up, every launch.
-There is nothing to press to get the normal behaviour.
-
-### Keys
+Nothing to press for the normal behaviour.
 
 | Key | Action |
 | --- | --- |
@@ -45,97 +44,77 @@ There is nothing to press to get the normal behaviour.
 | Ctrl+F9 | Restore the game's own levels |
 | Ctrl+R | Reload the mod after editing `main.lua` |
 
-### Console commands
-
-Open the UE4SS console (enable it with `ConsoleEnabled = 1` in
-`UE4SS-settings.ini`) and use:
+Console commands, with the console enabled via `ConsoleEnabled = 1` in
+`UE4SS-settings.ini`:
 
 | Command | Action |
 | --- | --- |
-| `lac_apply` | Re-apply |
-| `lac_reset` | Back to the game's levels |
-| `lac_set <relpath> <multiplier>` | Change one submix live |
-| `lac_verify` | Check the values still hold |
+| `lac_apply` / `lac_reset` | Apply, or restore the game's levels |
+| `lac_set <relpath> <mult>` | Change one submix live |
+| `lac_verify` | Read the class volumes back and check they hold |
 | `lac_dump` | Dump the audio graph |
 | `lac_param <relpath>` | Print every property on an object |
-| `lac_forget` | Discard stored authored values and re-capture |
+| `lac_forget` | Discard stored authored volumes and re-capture |
 
 `lac_set` is the fast way to tune by ear, no reload needed:
 
 ```
 lac_set Submixes/SS_Music 0.45
-lac_set Submixes/SS_Crowds 0.50
+lac_set Submixes/SS_Vehicles 0.55
 ```
 
-Those are not saved. Put the values you settle on into `main.lua`.
+It reaches anything in `CONFIG.bus_for`. Changes are not saved, so put values you
+settle on into `main.lua`.
 
 ## Tuning
 
-Two dials, in the `CONFIG` table at the top of
+Both dials are in the `CONFIG` table at the top of
 `Mods\LoudAndClear\Scripts\main.lua`.
 
-### Dialogue level
+**Dialogue level.** `class_boost`, a linear multiplier on the dialogue sound
+classes. `1.0` is untouched, `2.0` is twice as loud. This is the dial for "I
+still cannot hear them". Pushing it far feeds the compressor on the game's main
+bus and starts pumping the rest of the mix, so if high values sound harsh rather
+than louder, take some of it from the duck table instead.
 
-```lua
-class_boost = 1.7,
-```
+**Separation.** The `duck` table, as multipliers of each submix's authored level,
+converted to dB internally:
 
-A plain linear multiplier on the dialogue sound classes. `1.0` is untouched,
-`2.0` is twice as loud. This is the dial for "I still cannot hear them".
+| Submix | Multiplier | dB |
+| --- | --- | --- |
+| `SS_Music` | 0.60 | -4.44 |
+| `SS_Crowds` | 0.65 | -3.74 |
+| `SS_HighSpeedAirflow` | 0.65 | -3.74 |
+| `SS_NonLocalPlayerEngineAndExhaust` | 0.70 | -3.10 |
+| `SS_LocalPlayerEngine` | 0.75 | -2.50 |
+| `SS_LocalPlayerExhaust` | 0.75 | -2.50 |
+| `SS_Ambience` | 0.80 | -1.94 |
 
-Pushing it far will eventually feed `SE_Main_MixModeCompressor` on the main bus
-and start pumping the rest of the mix, so if high values sound harsh rather than
-louder, take some of it from the duck table instead.
-
-### Separation
-
-```lua
-duck = {
-    ["Submixes/SS_Music"]                          = 0.60,  -- -4.44 dB
-    ["Submixes/SS_Crowds"]                         = 0.65,  -- -3.74 dB
-    ["Submixes/SS_HighSpeedAirflow"]               = 0.65,  -- -3.74 dB
-    ["Submixes/SS_NonLocalPlayerEngineAndExhaust"] = 0.70,  -- -3.10 dB
-    ["Submixes/SS_LocalPlayerEngine"]              = 0.75,  -- -2.50 dB
-    ["Submixes/SS_LocalPlayerExhaust"]             = 0.75,  -- -2.50 dB
-    ["Submixes/SS_Ambience"]                       = 0.80,  -- -1.94 dB
-}
-```
-
-Multipliers relative to the game's authored level, converted to dB internally.
 There is 60 dB of range, so these can go much deeper. Engines below about 0.50
 costs the racing noticeable weight, which is a real trade rather than a free win.
 
-Add any submix from `Audio/Mixing/Submixes/`. Gain on a parent is inherited by
-its children, so name parents, not both.
-
-### After editing
-
-```powershell
-.\tools\install.ps1 -ModOnly
-```
-
-Then Ctrl+R in game. With `EnableAutoReloadingLuaMods = 1` it often reloads on
-save by itself, but the watcher is inconsistent, so do not rely on it.
+After editing, run `.\tools\install.ps1 -ModOnly` then Ctrl+R in game.
+`EnableAutoReloadingLuaMods = 1` often reloads on save by itself, but the watcher
+is inconsistent, so do not rely on it.
 
 ## How it works
 
-Volume in this game is reachable at several stages and **only two of them do
-anything useful**. Both are used, for different jobs.
+Volume is reachable at several stages here and only two of them do anything.
 
 **Sound class volume, for boosting.** `FSoundClassProperties::Volume` is a plain
 float with no unity ceiling, applied to `SC_Voice` and `SC_Characters_Vox`. It
-also reads back, so the mod writes it, reads it, and logs `verified` rather than
+reads back, so the mod writes it, reads it, and logs `verified` rather than
 assuming the write landed.
 
-**Control buses, for ducking.** Each submix has a `CB_Submix*` control bus wired
-to its `OutputVolumeModulation` destination, driven through
+**Control buses, for ducking.** Each submix's gain comes from its
+`OutputVolumeModulation` destination, driven by a `CB_Submix*` bus through
 `UAudioModulationStatics::SetGlobalBusMixValue`. Values are in decibels, so
 multipliers convert with `20*log10`.
 
-### Why boosting goes through sound classes and not buses
+### Why a bus cannot boost
 
 The buses run through `MP_Volume`, a `SoundModulationParameterVolume`. Dumping
-its real properties shows one range field:
+its real properties shows exactly one range field:
 
 ```
 [SoundModulationParameterVolume] FloatProperty MinVolume = -60.0
@@ -143,24 +122,22 @@ its real properties shows one range field:
 
 No `MaxVolume`, because 0 dB is both unity and the ceiling for that parameter
 type: it maps `[-60, 0]` dB onto `[0, 1]` normalised and clamps. A request of
-+3.52 dB or +6.02 dB normalises above 1.0 and comes back as unity. So a bus
-boost is silently discarded, while a bus cut has the full 60 dB available.
++3.52 dB or +6.02 dB normalises above 1.0 and comes back as unity, so a bus boost
+is silently discarded while a bus cut has the full 60 dB available. This is
+arithmetic inside the parameter, not an access restriction, so a native DLL would
+hit the same clamp.
 
-This is arithmetic inside the parameter, not an access restriction, so a native
-DLL would hit the same clamp. Sound class volume sidesteps it by being a
-different stage entirely.
+### The stage that does nothing
 
-### Stages that do not work
+Writing submix `OutputVolume` via `SetSubmixOutputVolume` accomplishes nothing.
+The call succeeds, but the property reads back as `nil` on all 62 submixes and
+nothing changes audibly, because the modulation destination drives the gain
+instead. That path was in the mod originally and has been removed.
 
-Writing submix `OutputVolume` via `SetSubmixOutputVolume` accomplishes nothing
-here. The call succeeds, but the property reads back as `nil` on all 62
-submixes and nothing changes audibly, because the modulation destination drives
-the gain instead. That path was in the mod originally and has been removed.
-
-### Routing that matters
+### Routing
 
 Gain on a parent is inherited, so targeting a parent and its children compounds
-the change:
+the change. Target parents only:
 
 ```
 SC_Voice      -> SC_Commentary, SC_DiegeticVoice, SC_NonDiegeticVoice, SC_Voice_Cinematic
@@ -179,28 +156,27 @@ directly because its parent also carries foley that should not be lifted.
 The authored volumes are captured before the first write and saved to
 `%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\LoudAndClear-baseline.txt`.
 
-This exists because a hot reload hands the mod a fresh Lua state. Without the
-file it would read the already-boosted value back as the authored one and
-multiply again, walking 1.7 to 2.9 to 4.9 across three reloads. Saving the first
-capture makes re-applying idempotent.
+A hot reload or a restart hands the mod a fresh Lua state while the classes are
+still boosted. Without the file it would read the boosted value back as the
+authored one and multiply again, walking 1.7 to 2.9 to 4.9 across three reloads.
+Saving the first capture makes re-applying idempotent.
 
-It lives in the save directory rather than next to the script because the mod
-folder is under Program Files, which is not writable without elevation.
+It lives in the save directory because the mod folder is under Program Files,
+which is not writable without elevation.
 
 Run `lac_forget` to discard it and re-capture. Worth doing after a game patch,
 which can change the authored values and leave the file stale.
 
-## Surviving game updates
+## After a game update
 
-Nothing makes AOB scanning immune to patches. But the layers differ a lot in how
-they fail, and the dangerous one has been fixed.
+Nothing makes AOB scanning immune to patches, but the layers fail differently.
 
-**The mod's Lua is durable.** It resolves assets by path name, guards every
-reflection call, and logs when something is missing. A content reorganisation
-makes it stop working, not crash.
+The mod's own Lua is durable: it resolves assets by name, guards every reflection
+call, and logs what is missing. A content reorganisation makes it stop working,
+not crash.
 
-**The signatures used to be actively dangerous.** Three of the four files in
-`UE4SS_Signatures` shipped like this:
+The signatures are the fragile layer, and three of the four files that UE4SS
+packages commonly ship are actively dangerous:
 
 ```lua
 local ImageBase = MatchAddress - 0x238D414   -- assume anchor sits at this RVA
@@ -213,69 +189,61 @@ UE4SS reports a successful scan, and the engine gets a wrong pointer. That
 crashes rather than erroring.
 
 `Signatures/` replaces them with patterns that find the same targets by content
-and resolve relatively, the way `GUObjectArray.lua` already did. Verified
-equivalent on the reference build:
+and resolve relatively. Verified equivalent on the reference build:
 
 | Signature | Matches | Resolves to | Old hardcoded value |
 | --- | --- | --- | --- |
-| `GMalloc` | 3 (all agree) | `0xAB747C8` | `0xAB747C8` |
+| `GMalloc` | 3, all agreeing | `0xAB747C8` | `0xAB747C8` |
 | `FName_ToString` | 1 | `0x3752404` | `0x3752404` |
 | `FName_Constructor` | 1 | `0x3C7DB26` | `0x3C7DB26` |
 | `GUObjectArray` | 1 | `0xAC5E910` | already relative |
 
-`GMalloc` matching three sites is a feature, not a problem: UE4SS dedupes by
-resolved value, so three independent sites agreeing means two can disappear and
-it still works.
+`GMalloc` matching three sites is a feature: UE4SS dedupes by resolved value, so
+three agreeing sites means two can disappear and it still works.
 
-`install.ps1` deploys these and quarantines any foreign game-specific overrides
-it finds, keeping the originals as `.hardcoded-bak`.
-
-### After an update, before launching
+Before launching after a patch:
 
 ```powershell
-.\tools\check-after-update.ps1          # exe fingerprint, foreign overrides, settings
-python tools\check-signatures.py        # do the patterns still resolve cleanly
+.\tools\check-after-update.ps1       # exe fingerprint, foreign overrides, settings
+python tools\check-signatures.py     # do the patterns still resolve cleanly
 ```
 
-`check-signatures.py` reads the patterns straight out of `Signatures/*.lua`,
-scans the installed exe, and reports what UE4SS would accept. Exit code 1 means
-do not launch.
+`check-signatures.py` reads the patterns out of `Signatures/*.lua`, scans the
+installed exe, and reports what UE4SS would accept. Exit code 1 means do not
+launch. Reference fingerprints are in `tools/known-build.json`.
 
 If a pattern stops matching, UE4SS fails its scan and refuses to start, which is
-the safe failure. Recovery options, in order: get a UE4SS build matching the new
-engine version, or delete the affected file so the generic scanner tries
-instead, or remove the mod with `uninstall.ps1 -All`.
+the safe failure. Recovery, in order: get a UE4SS build matching the new engine
+version, delete the affected file so the generic scanner tries instead, or remove
+the mod with `uninstall.ps1 -All`.
 
-Also run `lac_forget` in game after a patch. A rebalanced mix changes the
-authored volumes, and a stale `baseline.txt` would apply the boost to the wrong
-base.
-
-### What else gets reverted
-
-Steam updates generally leave extra files alone, since `dwmapi.dll` and `ue4ss/`
-are not in the game manifest. Vortex is the likelier culprit: redeploying it can
-restore foreign signature overrides and reset `UE4SS-settings.ini`, turning hot
-reload back off. `check-after-update.ps1` checks for both.
+Steam updates generally leave `dwmapi.dll` and `ue4ss/` alone, since they are not
+in the game manifest. Vortex is the likelier culprit: redeploying it can restore
+foreign signature overrides and reset `UE4SS-settings.ini`.
 
 ## Troubleshooting
 
-### Dialogue level does not change
-
-Check `UE4SS.log` for the apply summary:
+Everything is logged to `ue4ss\UE4SS.log`. A healthy launch:
 
 ```
-applied: 7/7 buses ducked, 2/2 class volumes boosted
+PS scan successful
+Starting Lua mod 'LoudAndClear'
+restored 2 authored class volumes
+audio graph is up after 6s, applying
 class SC_Voice  1.000 -> 1.700  (x1.70, verified)
+applied: 7/7 buses ducked, 2/2 class volumes boosted
 ```
 
-`verified` means the write landed and read back. If a class reports that the
-value did not stick, or `0/2 class volumes`, the names or paths are wrong, and
-Ctrl+F8 will show what is actually loaded.
+**Dialogue level does not change** but the log says `verified`: class volume is
+sampled when a voice starts, so a line already playing when you reload will not
+change. Trigger a new one.
 
-Sound class volume is sampled when a voice starts, so a line already playing
-when you reload will not change. Trigger a new one.
+**`0/2 class volumes`, or a line saying the value did not stick:** the names or
+paths are wrong. Ctrl+F8 shows what is actually loaded.
 
-### UE4SS fails to start
+<a id="ue4ss-fails-to-start"></a>
+
+**UE4SS fails to start**, with no `LoudAndClear` lines at all:
 
 ```
 [PS] Failed to find GMalloc
@@ -284,20 +252,19 @@ Fatal Error: PS scan timed out
 ```
 
 The build is too old for this engine version. `EngineVersionOverride` will not
-fix it, because the problem is a scanner that does not know the newer layouts.
-
-Packaging date is not a reliable signal. A Vortex or Nexus package rebuilt in
+help, because the problem is a scanner that does not know the newer layouts.
+Packaging date is not a reliable signal: a Vortex or Nexus package rebuilt in
 2026 for another game can still contain a 2024 DLL, so check the DLL itself.
 
-### UE4SS starts then dies on a signature file
+**UE4SS starts then dies naming another game's executable:**
 
 ```
 Fatal Error: [SWZC StaticConstructObject] cannot read adjacent SWZeroCompany.exe
 ```
 
-Game-specific AOB overrides left in `ue4ss/UE4SS_Signatures/` from another
-game's package. They hard-reject when their own exe is absent. Move them out of
-that folder and the generic scanner takes over.
+Game-specific AOB overrides left in `ue4ss/UE4SS_Signatures/` from another game's
+package. They hard-reject when their own exe is absent. Move them out of that
+folder; `install.ps1` quarantines them automatically.
 
 ## Game audio architecture
 
@@ -317,21 +284,21 @@ developer's crash telemetry.
 
 **Mix topology.** 61 sound classes in `/Game/Griffin/Audio/Mixing/Classes/`, 62
 submixes in `Submixes/`, and a full Audio Modulation layer: one `CB_Submix*` bus
-per submix, settings buses (`CB_Settings_DialogueVolume` and Main, Music, Sfx, UI
-siblings) all bound to `MP_Volume`, and gameplay mixes including `CBM_InRaceVO`,
-`CBM_PreRaceVO_Ducking` and `CBM_Snapshot_Conversation`.
+per submix, settings buses (`CB_Settings_DialogueVolume` plus Main, Music, Sfx
+and UI siblings) all bound to `MP_Volume`, and gameplay mixes including
+`CBM_InRaceVO`, `CBM_PreRaceVO_Ducking` and `CBM_Snapshot_Conversation`.
 
 `Griffin/Plugins/FuseMixingControl` is a MIDI control surface for the audio
-team's dev builds and is not part of the runtime settings path.
+team's dev builds, not part of the runtime settings path.
 
 **Paks are unencrypted.** Encryption key GUID is zero, container flags are
 `Compressed | Indexed`, so FModel opens `Griffin\Content\Paks` with no AES key.
 
 **In-game settings.** The options menu has a speech slider (`DA_SpeechVolume`),
 stored as `DialogueVolume` under `[/Script/Griffin.GfnUserSettingsPC]` in
-`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\Config\Windows\GameUserSettings.ini`.
-It maxes at 1.0. `AudioDynamicRange` there is also worth trying before modding:
-`TV` or `Midnight` compress the mix and may be enough on their own.
+`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\Config\Windows\GameUserSettings.ini`,
+capped at 1.0. `AudioDynamicRange` in the same file selects between the
+`CBM_DynamicRange*` mixes, and `TV` or `Midnight` compress the mix.
 
 ## Caveats
 
