@@ -45,26 +45,59 @@ local CONFIG = {
         ["Submixes/SS_Ambience"]                       = 0.80,
     },
 
+    -- Parents only. Each submix has its own bus, and a gain set on a parent is
+    -- inherited by its children, so listing both compounds the boost. The dump
+    -- gives the routing:
+    --
+    --   SS_DiegeticVoice    -> SS_Voice
+    --   SS_NonDiegeticVoice -> SS_Voice
+    --   SS_Voice            -> SS_Main
+    --   SS_Characters_Vox   -> SS_Characters   (separate branch)
+    --
+    -- so SS_Voice covers the diegetic and non-diegetic children. Boosting all
+    -- three gave diegetic dialogue roughly +10.5 dB instead of +3.5 dB.
+    -- SS_Characters_Vox is on its own branch and still needs naming.
     voice_submixes = {
         "Submixes/SS_Voice",
         "Submixes/SS_Voice_Cinematic",
         "Submixes/SS_Characters_Vox",
-        "Submixes/SS_DiegeticVoice",
-        "Submixes/SS_NonDiegeticVoice",
         "Submixes/SS_Commentary",
     },
 
+    -- Submix relpath -> the control bus that actually drives its gain.
+    --
+    -- Writing OutputVolume on these submixes is measurably inert: the value is
+    -- accepted, reads back unchanged on every verify pass, and does nothing
+    -- audible. Each submix has its own CB_Submix* bus wired to its
+    -- OutputVolumeModulation destination, and an enabled modulation destination
+    -- drives the value while the base is bypassed. The bus is the live stage.
+    bus_for = {
+        ["Submixes/SS_Music"]                          = "Modulation/Submixes/CB_SubmixMusic",
+        ["Submixes/SS_Crowds"]                         = "Modulation/Submixes/CB_SubmixCrowds",
+        ["Submixes/SS_HighSpeedAirflow"]               = "Modulation/Submixes/CB_SubmixHighSpeedAirflow",
+        ["Submixes/SS_NonLocalPlayerEngineAndExhaust"] = "Modulation/Submixes/CB_SubmixNonLocalPlayerEngineAndExhaust",
+        ["Submixes/SS_LocalPlayerEngine"]              = "Modulation/Submixes/CB_SubmixLocalPlayerEngine",
+        ["Submixes/SS_LocalPlayerExhaust"]             = "Modulation/Submixes/CB_SubmixLocalPlayerExhaust",
+        ["Submixes/SS_Ambience"]                       = "Modulation/Submixes/CB_SubmixAmbience",
+        ["Submixes/SS_Voice"]                          = "Modulation/Submixes/CB_SubmixVoice",
+        ["Submixes/SS_Voice_Cinematic"]                = "Modulation/Submixes/CB_SubmixVoiceCinematic",
+        ["Submixes/SS_Characters_Vox"]                 = "Modulation/Submixes/CB_SubmixCharactersVox",
+        ["Submixes/SS_Commentary"]                     = "Modulation/Submixes/CB_SubmixCommentary",
+    },
+
+    -- Also write the base OutputVolume. Harmless, and it is the right stage for
+    -- any submix whose modulation destination turns out to be disabled.
+    also_write_submix = true,
+
     apply_on_start = true,
 
-    -- How often to read our submix volumes back and check they still hold.
-    -- This is a verification pass, not a blind rewrite: it only re-applies when
-    -- a value has actually drifted, and logs when that happens.
-    --
-    -- The expectation is that it never does. SetSubmixOutputVolume writes the
-    -- base OutputVolume, while the game's control buses drive the separate
-    -- OutputVolumeModulation destination, so the two should not collide. If the
-    -- log never reports drift over a few sessions, set this to 0 and the mod
-    -- becomes a one-shot at startup.
+    -- Dump the audio graph once on the first apply. The dump is where the
+    -- modulation parameter ranges come from, and those decide what units the
+    -- bus values are in, so it should not depend on remembering a keypress.
+    dump_on_start = true,
+
+    -- How often to read our values back and check they still hold. Only
+    -- re-applies what actually moved.
     verify_seconds = 30,
 
     verbose = true,
@@ -147,11 +180,35 @@ local BASELINE_FILE = (function()
     -- Prefer the script's own directory so this does not depend on the working
     -- directory, which UE4SS sets to the ue4ss folder.
     local ok, info = pcall(debug.getinfo, 1, "S")
+    -- The mod folder lives under Program Files, which is not writable without
+    -- elevation, so a write next to the script fails silently in a normal
+    -- session. Prefer the game's own save directory, which is writable, and
+    -- only fall back to paths near the script.
+    local candidates = {}
+
+    local localappdata = os.getenv("LOCALAPPDATA")
+    if localappdata then
+        candidates[#candidates + 1] =
+            localappdata .. "/StarWarsGalacticRacer/Saved/DialogueMix-baseline.txt"
+    end
+
     if ok and info and info.source then
         local dir = info.source:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$")
-        if dir then return dir .. "/baseline.txt" end
+        if dir then candidates[#candidates + 1] = dir .. "/baseline.txt" end
     end
-    return "Mods/DialogueMix/Scripts/baseline.txt"
+    candidates[#candidates + 1] = "Mods/DialogueMix/baseline.txt"
+
+    -- Pick the first one we can actually open for append, so a path is only
+    -- chosen if writing to it will work later.
+    for _, path in ipairs(candidates) do
+        local handle = io.open(path, "a")
+        if handle then
+            handle:close()
+            return path
+        end
+    end
+
+    return candidates[1] or "DialogueMix-baseline.txt"
 end)()
 
 local function save_baseline()
@@ -199,6 +256,112 @@ local function world_context()
 end
 
 ----------------------------------------------------------------------
+-- audio modulation
+----------------------------------------------------------------------
+
+-- UAudioModulationStatics is where the bus controls live. Resolved lazily
+-- because the module may not be loaded when this script first runs.
+local modulation_statics_cache = nil
+
+local function modulation_statics()
+    if modulation_statics_cache and valid(modulation_statics_cache) then
+        return modulation_statics_cache
+    end
+    for _, path in ipairs({
+        "/Script/AudioModulation.Default__AudioModulationStatics",
+        "/Script/AudioModulation.Default__SoundModulationStatics",
+    }) do
+        local ok, obj = pcall(StaticFindObject, path)
+        if ok and valid(obj) then
+            modulation_statics_cache = obj
+            return obj
+        end
+    end
+    return nil
+end
+
+-- Reports what a bus's modulation parameter looks like, so the unit space the
+-- bus values live in is read off the game rather than assumed.
+local function describe_parameter(bus)
+    local parameter
+    pcall(function() parameter = bus.Parameter end)
+    if not valid(parameter) then return nil, "<no parameter>" end
+
+    local class_name = "<unknown>"
+    pcall(function() class_name = parameter:GetClass():GetFName():ToString() end)
+
+    local fields = {}
+    for _, name in ipairs({ "UnitMin", "UnitMax", "MinValue", "MaxValue", "DefaultValue" }) do
+        local value = read_float(parameter, name)
+        if value then fields[#fields + 1] = string.format("%s=%.3f", name, value) end
+    end
+
+    return class_name, table.concat(fields, " ")
+end
+
+-- Converts a linear gain multiplier into the value a bus expects.
+-- A volume parameter is in decibels; anything else is treated as normalised.
+local function bus_value_for(multiplier, class_name)
+    if class_name and class_name:lower():find("volume") then
+        if multiplier <= 0 then return -96.0 end
+        return 20.0 * (math.log(multiplier, 10))
+    end
+    return multiplier
+end
+
+-- relpath -> what we last wrote to its bus, for the verify pass.
+local bus_expected = {}
+
+local function set_bus_multiplier(relpath, multiplier)
+    local bus_rel = CONFIG.bus_for[relpath]
+    if not bus_rel then return false end
+
+    local bus = resolve(bus_rel)
+    if not bus then
+        vlog("bus not loaded: %s", bus_rel)
+        return false
+    end
+
+    local statics = modulation_statics()
+    if not statics then
+        log("AudioModulationStatics not found, cannot drive buses")
+        return false
+    end
+
+    local world = world_context()
+    if not world then return false end
+
+    local class_name, ranges = describe_parameter(bus)
+    local value = bus_value_for(multiplier, class_name)
+
+    local ok, err = pcall(function()
+        statics:SetGlobalBusMixValue(world, bus, value, 0.1)
+    end)
+
+    if not ok then
+        log("SetGlobalBusMixValue failed on %s: %s", bus_rel, tostring(err))
+        return false
+    end
+
+    bus_expected[relpath] = value
+    vlog("bus %s = %.3f (x%.2f, parameter %s %s)",
+        bus_rel:match("([^/]+)$"), value, multiplier, tostring(class_name), ranges)
+    return true
+end
+
+local function clear_bus(relpath)
+    local bus_rel = CONFIG.bus_for[relpath]
+    if not bus_rel then return false end
+    local bus = resolve(bus_rel)
+    local statics = modulation_statics()
+    local world = world_context()
+    if not (bus and statics and world) then return false end
+    local ok = pcall(function() statics:ClearGlobalBusMixValue(world, bus, 0.1) end)
+    if ok then bus_expected[relpath] = nil end
+    return ok
+end
+
+----------------------------------------------------------------------
 -- the actual work
 ----------------------------------------------------------------------
 
@@ -241,36 +404,57 @@ local function set_submix_multiplier(relpath, multiplier)
     return true
 end
 
-local function apply()
-    ExecuteInGameThread(function()
-        local changed, attempted = 0, 0
-
-        for relpath, multiplier in pairs(CONFIG.duck) do
-            attempted = attempted + 1
-            if set_submix_multiplier(relpath, multiplier) then changed = changed + 1 end
+-- Builds the full relpath -> multiplier map for one pass.
+local function targets()
+    local map = {}
+    for relpath, multiplier in pairs(CONFIG.duck) do
+        map[relpath] = multiplier
+    end
+    if CONFIG.dialogue_boost ~= 1.0 then
+        for _, relpath in ipairs(CONFIG.voice_submixes) do
+            map[relpath] = CONFIG.dialogue_boost
         end
+    end
+    return map
+end
 
-        if CONFIG.dialogue_boost ~= 1.0 then
-            for _, relpath in ipairs(CONFIG.voice_submixes) do
-                attempted = attempted + 1
-                if set_submix_multiplier(relpath, CONFIG.dialogue_boost) then changed = changed + 1 end
+local function apply()
+    -- Claim the work before going async. ExecuteInGameThread defers, so leaving
+    -- this until the callback let the startup poll fire a second apply in the
+    -- gap, which is why the first run applied everything twice.
+    applied = true
+
+    ExecuteInGameThread(function()
+        local buses, submixes, attempted = 0, 0, 0
+
+        for relpath, multiplier in pairs(targets()) do
+            attempted = attempted + 1
+            if set_bus_multiplier(relpath, multiplier) then buses = buses + 1 end
+            if CONFIG.also_write_submix then
+                if set_submix_multiplier(relpath, multiplier) then submixes = submixes + 1 end
             end
         end
 
-        applied = changed > 0
-        log("applied %d/%d submix changes", changed, attempted)
+        log("applied: %d/%d control buses, %d/%d submix volumes",
+            buses, attempted, submixes, attempted)
 
-        if changed == 0 then
-            log("nothing applied. Run Ctrl+F8 to dump the audio graph and check")
-            log("whether these submixes are loaded and what they are really called.")
+        if buses == 0 then
+            applied = false
+            log("no control bus took a value. The buses are the stage that")
+            log("actually affects audio here, so check the dump for their real names.")
         end
     end)
 end
 
 local function reset()
     ExecuteInGameThread(function()
-        local restored = 0
+        local cleared, restored = 0, 0
         local world = world_context()
+
+        for relpath in pairs(CONFIG.bus_for) do
+            if clear_bus(relpath) then cleared = cleared + 1 end
+        end
+
         for relpath, authored in pairs(baseline) do
             local submix = resolve(relpath)
             if submix and world then
@@ -278,9 +462,11 @@ local function reset()
                 if ok then restored = restored + 1 end
             end
         end
+
         applied = false
         expected = {}
-        log("restored %d submixes to authored levels", restored)
+        bus_expected = {}
+        log("reset: cleared %d bus overrides, restored %d submix volumes", cleared, restored)
     end)
 end
 
@@ -308,9 +494,13 @@ local function verify()
 
     if drifted == 0 and not drift_reported then
         drift_reported = true
-        log("verify: all %d submixes still hold their values.",
+        -- Worth stating what this does and does not prove. It only reads the
+        -- base OutputVolume back. On the first run every value held perfectly
+        -- and nothing changed audibly, which is how we learned that stage is
+        -- inert. A bus override cannot be read back the same way, because the
+        -- live value lives inside the modulation system, not on the object.
+        log("verify: %d submix base volumes unchanged (this stage is inert here)",
             (function() local n = 0 for _ in pairs(expected) do n = n + 1 end return n end)())
-        log("verify: if this stays quiet, set verify_seconds = 0 to go one-shot.")
     elseif drifted > 0 then
         drift_reported = false
     end
@@ -380,20 +570,27 @@ local function dump()
         -- the modulation system rather than on the object, so this prints the
         -- parameter each bus is bound to: that is what decides whether a value
         -- above the slider maximum survives or gets normalised away.
+        -- The buses are the stage that actually moves audio here, so this is the
+        -- important section: it reports each bus's parameter class and range,
+        -- which is what decides the unit space SetGlobalBusMixValue expects.
         local okb, buses = pcall(FindAllOf, "SoundControlBus")
         if okb and type(buses) == "table" then
             log("-- control buses (%d loaded) --", #buses)
             for _, bus in pairs(buses) do
                 if valid(bus) then
-                    local parameter = "<none>"
-                    pcall(function()
-                        local p = bus.Parameter
-                        if valid(p) then parameter = full_name(p) end
-                    end)
-                    log("  %s  parameter=%s", full_name(bus), parameter)
+                    local class_name, ranges = describe_parameter(bus)
+                    log("  %s  parameter=%s %s",
+                        full_name(bus), tostring(class_name), ranges or "")
                 end
             end
+        else
+            log("FindAllOf('SoundControlBus') returned nothing usable")
         end
+
+        log("-- modulation statics --")
+        local statics = modulation_statics()
+        log("  AudioModulationStatics: %s",
+            statics and full_name(statics) or "<NOT FOUND, buses cannot be driven>")
 
         log("================ end ================")
     end)
@@ -468,6 +665,7 @@ if CONFIG.apply_on_start then
         if not applied then
             if world_context() and resolve("Submixes/SS_Main") then
                 log("audio graph is up after %ds, applying", waited)
+                if CONFIG.dump_on_start then dump() end
                 apply()
             elseif waited % 15 == 0 then
                 vlog("still waiting for the audio graph (%ds)", waited)
