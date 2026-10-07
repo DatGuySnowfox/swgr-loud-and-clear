@@ -190,6 +190,73 @@ folder is under Program Files, which is not writable without elevation.
 Run `dmx_forget` to discard it and re-capture. Worth doing after a game patch,
 which can change the authored values and leave the file stale.
 
+## Surviving game updates
+
+Nothing makes AOB scanning immune to patches. But the layers differ a lot in how
+they fail, and the dangerous one has been fixed.
+
+**The mod's Lua is durable.** It resolves assets by path name, guards every
+reflection call, and logs when something is missing. A content reorganisation
+makes it stop working, not crash.
+
+**The signatures used to be actively dangerous.** Three of the four files in
+`UE4SS_Signatures` shipped like this:
+
+```lua
+local ImageBase = MatchAddress - 0x238D414   -- assume anchor sits at this RVA
+return ImageBase + 0xAB747C8                 -- then a hardcoded absolute RVA
+```
+
+Those RVAs are valid for exactly one build. The anchor is a distinctive sequence
+occurring exactly once, so after a patch it will very likely **still match**,
+UE4SS reports a successful scan, and the engine gets a wrong pointer. That
+crashes rather than erroring.
+
+`Signatures/` replaces them with patterns that find the same targets by content
+and resolve relatively, the way `GUObjectArray.lua` already did. Verified
+equivalent on the reference build:
+
+| Signature | Matches | Resolves to | Old hardcoded value |
+| --- | --- | --- | --- |
+| `GMalloc` | 3 (all agree) | `0xAB747C8` | `0xAB747C8` |
+| `FName_ToString` | 1 | `0x3752404` | `0x3752404` |
+| `FName_Constructor` | 1 | `0x3C7DB26` | `0x3C7DB26` |
+| `GUObjectArray` | 1 | `0xAC5E910` | already relative |
+
+`GMalloc` matching three sites is a feature, not a problem: UE4SS dedupes by
+resolved value, so three independent sites agreeing means two can disappear and
+it still works.
+
+`install.ps1` deploys these and quarantines any foreign game-specific overrides
+it finds, keeping the originals as `.hardcoded-bak`.
+
+### After an update, before launching
+
+```powershell
+.\tools\check-after-update.ps1          # exe fingerprint, foreign overrides, settings
+python tools\check-signatures.py        # do the patterns still resolve cleanly
+```
+
+`check-signatures.py` reads the patterns straight out of `Signatures/*.lua`,
+scans the installed exe, and reports what UE4SS would accept. Exit code 1 means
+do not launch.
+
+If a pattern stops matching, UE4SS fails its scan and refuses to start, which is
+the safe failure. Recovery options, in order: get a UE4SS build matching the new
+engine version, or delete the affected file so the generic scanner tries
+instead, or remove the mod with `uninstall.ps1 -All`.
+
+Also run `dmx_forget` in game after a patch. A rebalanced mix changes the
+authored volumes, and a stale `baseline.txt` would apply the boost to the wrong
+base.
+
+### What else gets reverted
+
+Steam updates generally leave extra files alone, since `dwmapi.dll` and `ue4ss/`
+are not in the game manifest. Vortex is the likelier culprit: redeploying it can
+restore foreign signature overrides and reset `UE4SS-settings.ini`, turning hot
+reload back off. `check-after-update.ps1` checks for both.
+
 ## Troubleshooting
 
 ### Dialogue level does not change

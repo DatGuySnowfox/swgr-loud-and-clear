@@ -1,0 +1,30 @@
+{
+  "_comment": "Fingerprints of the build this mod was developed and verified against. tools/check-after-update.ps1 compares the installed game to these and reports what needs re-checking. Update the values here after re-verifying against a new build.",
+  "verified": "2026-10-07",
+  "game": {
+    "exe": "Griffin/Binaries/Win64/SWGR-Win64-Shipping.exe",
+    "size": 488290328,
+    "sha256": "825d4e6e639b541abbc008f728d2ad16422bb74bdcf6b4844f60bcfaac502d7e"
+  },
+  "ue4ss": {
+    "dll": "Griffin/Binaries/Win64/ue4ss/UE4SS.dll",
+    "size": 20605440,
+    "sha256": "680a026890abb4d0df2211251f8defc1681a584275f1521dcc0fe30af480006f"
+  },
+  "signature_anchor": {
+    "_comment": "Three of the four UE4SS_Signatures files derive the image base from this anchor and then jump to a hardcoded absolute RVA. Those RVAs are valid only for the exe above.",
+    "pattern": "48 8D 0D ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? C6 05 ? ? ? ? 01",
+    "expected_matches": 1,
+    "expected_rva": "0x238D414",
+    "hardcoded_targets": {
+      "GMalloc": "0xAB747C8",
+      "FName_ToString": "0x3752404",
+      "FName_Constructor": "0x3C7DB26"
+    }
+  },
+  "sound_classes": {
+    "_comment": "Authored volumes captured from the verified build. If a patch rebalances the mix these change, and a stale baseline file would apply the boost to the wrong base.",
+    "SC_Voice": 1.0,
+    "SC_Characters_Vox": 1.0
+  }
+}

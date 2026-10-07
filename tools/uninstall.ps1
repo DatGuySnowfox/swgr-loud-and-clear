@@ -42,9 +42,22 @@ if (Test-Path $modsTxt) {
 
 $modsJson = Join-Path $Ue4ssDir "Mods\mods.json"
 if (Test-Path $modsJson) {
-    $entries = @(Get-Content -LiteralPath $modsJson -Raw | ConvertFrom-Json | Where-Object { $_.mod_name -ne $ModName })
-    ConvertTo-Json -InputObject $entries -Depth 5 | Set-Content -LiteralPath $modsJson -Encoding utf8
-    Say "deregistered from mods.json"
+    # Excise just our object by text, for the same reason install.ps1 inserts by
+    # text: reserialising this file lost eight entries once already.
+    $raw = [System.IO.File]::ReadAllText($modsJson)
+    $pattern = ',?\s*\{[^{}]*"mod_name"\s*:\s*"' + [regex]::Escape($ModName) + '"[^{}]*\}'
+
+    if ($raw -match $pattern) {
+        $updated = [regex]::Replace($raw, $pattern, "", 1)
+        # If ours was the first entry, a leading comma can be left behind.
+        $updated = $updated -replace '\[\s*,', '['
+        Copy-Item -LiteralPath $modsJson -Destination "$modsJson.bak" -Force
+        [System.IO.File]::WriteAllText($modsJson, $updated, (New-Object System.Text.UTF8Encoding($false)))
+        Say "deregistered from mods.json (previous kept as mods.json.bak)"
+    }
+    else {
+        Say "mods.json does not list $ModName"
+    }
 }
 
 if ($All) {

@@ -119,17 +119,88 @@ if (Test-Path $modsTxt) {
 
 $modsJson = Join-Path $ModsDir "mods.json"
 if (Test-Path $modsJson) {
-    $entries = @(Get-Content -LiteralPath $modsJson -Raw | ConvertFrom-Json)
-    $existing = $entries | Where-Object { $_.mod_name -eq $ModName }
-    if ($null -ne $existing) {
-        $existing.mod_enabled = $true
-        Say "mods.json already lists $ModName, ensured enabled"
+    # Append-only, by text. This file belongs to UE4SS, not to us.
+    #
+    # Two earlier attempts here did parse-and-reserialize and both damaged it.
+    # ConvertTo-Json in PowerShell 5.1 wrapped the array in {value:[...],
+    # Count:n}, burying the built-in mods inside a junk entry; the rewrite meant
+    # to repair that silently produced an empty set and left only our own entry,
+    # dropping the other eight. Reserialising a file you do not own turns a
+    # missing-entry problem into a data-loss problem, so this now only ever
+    # inserts, and never rewrites what is already there.
+
+    $raw = [System.IO.File]::ReadAllText($modsJson)
+
+    if ($raw -match ('"mod_name"\s*:\s*"' + [regex]::Escape($ModName) + '"')) {
+        Say "mods.json already lists $ModName"
     }
     else {
-        $entries += [pscustomobject]@{ mod_name = $ModName; mod_enabled = $true }
-        Say "registered in mods.json"
+        $close = $raw.LastIndexOf("]")
+        if ($close -lt 0) {
+            Warn "mods.json has no closing bracket, leaving it alone"
+            Warn "register $ModName by hand, or rely on mods.txt"
+        }
+        else {
+            $head = $raw.Substring(0, $close).TrimEnd()
+            $separator = ""
+            if ($head.EndsWith("}")) { $separator = "," }
+            $entry = '    {"mod_name": "' + $ModName + '", "mod_enabled": true}'
+            $updated = $head + $separator + "`n" + $entry + "`n]`n"
+
+            Copy-Item -LiteralPath $modsJson -Destination "$modsJson.bak" -Force
+            # No BOM: a BOM can break a strict JSON parser.
+            [System.IO.File]::WriteAllText($modsJson, $updated, (New-Object System.Text.UTF8Encoding($false)))
+            Say "registered in mods.json (previous kept as mods.json.bak)"
+        }
     }
-    ConvertTo-Json -InputObject $entries -Depth 5 | Set-Content -LiteralPath $modsJson -Encoding utf8
+}
+
+# --- AOB signatures -------------------------------------------------------
+
+# UE4SS locates engine internals by scanning for byte patterns. Packages for
+# other games sometimes ship overrides that hardcode absolute addresses, or that
+# reject outright when their own exe is missing. Both break this game, one of
+# them dangerously: a hardcoded address still "matches" after a patch and
+# resolves to the wrong place, which crashes instead of erroring.
+#
+# The files in Signatures/ find the same targets by content and resolve
+# relatively, so they tolerate a shifted layout.
+
+$SigSource = Join-Path $RepoRoot "Signatures"
+$SigTarget = Join-Path $Ue4ssDir "UE4SS_Signatures"
+
+if (Test-Path $SigSource) {
+    New-Item -ItemType Directory -Path $SigTarget -Force | Out-Null
+
+    # Quarantine anything tied to another game rather than deleting it.
+    $foreign = Get-ChildItem -Path $SigTarget -Filter "*.lua" -File -ErrorAction SilentlyContinue |
+        Where-Object { Select-String -LiteralPath $_.FullName -Pattern "SWZeroCompany|SWZC" -Quiet }
+    if ($foreign) {
+        $quarantine = Join-Path $SigTarget "disabled-foreign"
+        New-Item -ItemType Directory -Path $quarantine -Force | Out-Null
+        foreach ($f in $foreign) {
+            Move-Item -LiteralPath $f.FullName -Destination (Join-Path $quarantine $f.Name) -Force
+            Say "quarantined foreign signature: $($f.Name)"
+        }
+    }
+
+    foreach ($sig in Get-ChildItem -Path $SigSource -Filter "*.lua" -File) {
+        $dest = Join-Path $SigTarget $sig.Name
+        if (Test-Path $dest) {
+            $existing = Get-Content -LiteralPath $dest -Raw
+            if ($existing -match "ImageBase\s*=\s*MatchAddress\s*-") {
+                Copy-Item -LiteralPath $dest -Destination "$dest.hardcoded-bak" -Force
+                Say "replacing address-based $($sig.Name) (old kept as .hardcoded-bak)"
+            }
+        }
+        Copy-Item -LiteralPath $sig.FullName -Destination $dest -Force
+    }
+    Say "deployed $((Get-ChildItem -Path $SigSource -Filter '*.lua').Count) content-based signatures"
+
+    $checker = Join-Path $PSScriptRoot "check-signatures.py"
+    if (Test-Path $checker) {
+        Say "validate them any time with: python tools\check-signatures.py"
+    }
 }
 
 # --- engine version sanity check -----------------------------------------
