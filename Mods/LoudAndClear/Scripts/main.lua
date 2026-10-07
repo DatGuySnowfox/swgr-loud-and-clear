@@ -93,10 +93,18 @@ local CONFIG = {
 
     apply_on_start = true,
 
-    -- Dump the audio graph once on the first apply. The dump is where the
-    -- routing and the parameter ranges come from, so it should not depend on
-    -- remembering a keypress.
-    dump_on_start = true,
+    -- Off by default, and it should stay off outside of investigation.
+    --
+    -- The dump sweeps every loaded SoundSubmix, SoundClass and SoundControlBus,
+    -- then walks class hierarchies property by property. That is by far the
+    -- largest surface this mod touches, several hundred objects of reflection
+    -- per launch, against a reflection layer that has no way to know an object
+    -- was collected between being listed and being read.
+    --
+    -- It earned its keep while working out the audio routing. Keeping it on in
+    -- normal use is unnecessary risk for information already written down in the
+    -- README. Ctrl+F8 and lac_dump still run it on demand.
+    dump_on_start = false,
 
     -- How often to read the class volumes back and check they still hold. Only
     -- re-applies what actually moved. Set to 0 for a single pass at startup.
