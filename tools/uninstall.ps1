@@ -1,5 +1,5 @@
 <#
-    Removes UE4SS and the DialogueMix mod from STAR WARS: Galactic Racer.
+    Removes UE4SS and the LoudAndClear mod from STAR WARS: Galactic Racer.
 
     Usage:
         .\uninstall.ps1              # remove just the mod, leave UE4SS in place
@@ -13,7 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ModName = "DialogueMix"
+$ModName = "LoudAndClear"
 
 $BinariesDir = Join-Path $GamePath "Griffin\Binaries\Win64"
 $Ue4ssDir = Join-Path $BinariesDir "ue4ss"

@@ -1,5 +1,5 @@
 <#
-    Deploys UE4SS and the DialogueMix mod into STAR WARS: Galactic Racer.
+    Deploys UE4SS and the LoudAndClear mod into STAR WARS: Galactic Racer.
 
     Nothing here touches the game's own files. UE4SS loads through a dwmapi.dll
     proxy placed next to the shipping exe, and everything else lives in a ue4ss
@@ -21,7 +21,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ModName = "DialogueMix"
+$ModName = "LoudAndClear"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 function Say($message) { Write-Host "  $message" }

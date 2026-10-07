@@ -1,4 +1,4 @@
-# SWGR Dialogue Mix
+# Loud and Clear
 
 A UE4SS Lua mod for STAR WARS: Galactic Racer that makes dialogue intelligible
 during races. It lifts the dialogue sound classes and ducks the music, crowds,
@@ -13,8 +13,8 @@ Needs a UE4SS build with UE 5.6 support. See
 [Troubleshooting](#ue4ss-fails-to-start) if yours is older.
 
 ```powershell
-git clone https://github.com/DatGuySnowfox/swgr-dialogue-mix
-cd swgr-dialogue-mix
+git clone https://github.com/DatGuySnowfox/swgr-loud-and-clear
+cd swgr-loud-and-clear
 .\tools\install.ps1
 ```
 
@@ -52,19 +52,19 @@ Open the UE4SS console (enable it with `ConsoleEnabled = 1` in
 
 | Command | Action |
 | --- | --- |
-| `dmx_apply` | Re-apply |
-| `dmx_reset` | Back to the game's levels |
-| `dmx_set <relpath> <multiplier>` | Change one submix live |
-| `dmx_verify` | Check the values still hold |
-| `dmx_dump` | Dump the audio graph |
-| `dmx_param <relpath>` | Print every property on an object |
-| `dmx_forget` | Discard stored authored values and re-capture |
+| `lac_apply` | Re-apply |
+| `lac_reset` | Back to the game's levels |
+| `lac_set <relpath> <multiplier>` | Change one submix live |
+| `lac_verify` | Check the values still hold |
+| `lac_dump` | Dump the audio graph |
+| `lac_param <relpath>` | Print every property on an object |
+| `lac_forget` | Discard stored authored values and re-capture |
 
-`dmx_set` is the fast way to tune by ear, no reload needed:
+`lac_set` is the fast way to tune by ear, no reload needed:
 
 ```
-dmx_set Submixes/SS_Music 0.45
-dmx_set Submixes/SS_Crowds 0.50
+lac_set Submixes/SS_Music 0.45
+lac_set Submixes/SS_Crowds 0.50
 ```
 
 Those are not saved. Put the values you settle on into `main.lua`.
@@ -72,7 +72,7 @@ Those are not saved. Put the values you settle on into `main.lua`.
 ## Tuning
 
 Two dials, in the `CONFIG` table at the top of
-`Mods\DialogueMix\Scripts\main.lua`.
+`Mods\LoudAndClear\Scripts\main.lua`.
 
 ### Dialogue level
 
@@ -177,7 +177,7 @@ directly because its parent also carries foley that should not be lifted.
 ### baseline.txt
 
 The authored volumes are captured before the first write and saved to
-`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\DialogueMix-baseline.txt`.
+`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\LoudAndClear-baseline.txt`.
 
 This exists because a hot reload hands the mod a fresh Lua state. Without the
 file it would read the already-boosted value back as the authored one and
@@ -187,7 +187,7 @@ capture makes re-applying idempotent.
 It lives in the save directory rather than next to the script because the mod
 folder is under Program Files, which is not writable without elevation.
 
-Run `dmx_forget` to discard it and re-capture. Worth doing after a game patch,
+Run `lac_forget` to discard it and re-capture. Worth doing after a game patch,
 which can change the authored values and leave the file stale.
 
 ## Surviving game updates
@@ -246,7 +246,7 @@ the safe failure. Recovery options, in order: get a UE4SS build matching the new
 engine version, or delete the affected file so the generic scanner tries
 instead, or remove the mod with `uninstall.ps1 -All`.
 
-Also run `dmx_forget` in game after a patch. A rebalanced mix changes the
+Also run `lac_forget` in game after a patch. A rebalanced mix changes the
 authored volumes, and a stale `baseline.txt` would apply the boost to the wrong
 base.
 

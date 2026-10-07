@@ -1,5 +1,5 @@
 --[[
-    SWGR Dialogue Mix
+    Loud and Clear
     UE4SS Lua mod for STAR WARS: Galactic Racer (UE project "Griffin")
 
     Purpose: make dialogue intelligible over the race mix.
@@ -17,13 +17,13 @@
     first apply, so 1.0 always means "as the sound designers shipped it".
 
     Keys:    Ctrl+F7 apply    Ctrl+F8 dump audio graph    Ctrl+F9 reset
-    Console: dmx_apply | dmx_dump | dmx_reset | dmx_set <relpath> <multiplier>
+    Console: lac_apply | lac_dump | lac_reset | lac_set <relpath> <multiplier>
 --]]
 
 local UEHelpers = require("UEHelpers")
 
 local CONTENT = "/Game/Griffin/Audio/Mixing/"
-local TAG = "[DialogueMix] "
+local TAG = "[LoudAndClear] "
 
 ----------------------------------------------------------------------
 -- configuration
@@ -228,14 +228,14 @@ local BASELINE_FILE = (function()
     local localappdata = os.getenv("LOCALAPPDATA")
     if localappdata then
         candidates[#candidates + 1] =
-            localappdata .. "/StarWarsGalacticRacer/Saved/DialogueMix-baseline.txt"
+            localappdata .. "/StarWarsGalacticRacer/Saved/LoudAndClear-baseline.txt"
     end
 
     if ok and info and info.source then
         local dir = info.source:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$")
         if dir then candidates[#candidates + 1] = dir .. "/baseline.txt" end
     end
-    candidates[#candidates + 1] = "Mods/DialogueMix/baseline.txt"
+    candidates[#candidates + 1] = "Mods/LoudAndClear/baseline.txt"
 
     -- Pick the first one we can actually open for append, so a path is only
     -- chosen if writing to it will work later.
@@ -247,7 +247,7 @@ local BASELINE_FILE = (function()
         end
     end
 
-    return candidates[1] or "DialogueMix-baseline.txt"
+    return candidates[1] or "LoudAndClear-baseline.txt"
 end)()
 
 local function save_baseline()
@@ -257,7 +257,7 @@ local function save_baseline()
         return false
     end
     handle:write("# authored volumes captured before this mod ran\n")
-    handle:write("# delete this file, or run dmx_forget, to re-capture\n")
+    handle:write("# delete this file, or run lac_forget, to re-capture\n")
     for relpath, value in pairs(baseline) do
         handle:write(string.format("submix:%s=%.6f\n", relpath, value))
     end
@@ -841,14 +841,14 @@ RegisterKeyBindAsync(Key.F7, { ModifierKey.CONTROL }, function() apply() end)
 RegisterKeyBindAsync(Key.F8, { ModifierKey.CONTROL }, function() dump() end)
 RegisterKeyBindAsync(Key.F9, { ModifierKey.CONTROL }, function() reset() end)
 
-RegisterConsoleCommandHandler("dmx_apply", function() apply() return true end)
-RegisterConsoleCommandHandler("dmx_dump", function() dump() return true end)
-RegisterConsoleCommandHandler("dmx_reset", function() reset() return true end)
+RegisterConsoleCommandHandler("lac_apply", function() apply() return true end)
+RegisterConsoleCommandHandler("lac_dump", function() dump() return true end)
+RegisterConsoleCommandHandler("lac_reset", function() reset() return true end)
 
 -- Forgets the stored authored volumes so the next apply re-captures them.
 -- Only correct to run when the submixes are at their authored levels, so it
 -- resets them first.
-RegisterConsoleCommandHandler("dmx_forget", function()
+RegisterConsoleCommandHandler("lac_forget", function()
     reset()
     ExecuteInGameThread(function()
         baseline = {}
@@ -861,9 +861,9 @@ RegisterConsoleCommandHandler("dmx_forget", function()
     return true
 end)
 
--- dmx_param <relpath> dumps every property on any object, for when a value
+-- lac_param <relpath> dumps every property on any object, for when a value
 -- needs reading off the game rather than assuming a field name.
-RegisterConsoleCommandHandler("dmx_param", function(_, parameters)
+RegisterConsoleCommandHandler("lac_param", function(_, parameters)
     local relpath = parameters[1] or "Modulation/Submixes/CB_SubmixVoice"
     ExecuteInGameThread(function()
         local obj = resolve(relpath)
@@ -879,7 +879,7 @@ RegisterConsoleCommandHandler("dmx_param", function(_, parameters)
     return true
 end)
 
-RegisterConsoleCommandHandler("dmx_verify", function()
+RegisterConsoleCommandHandler("lac_verify", function()
     ExecuteInGameThread(function()
         local drifted = verify()
         log("verify: %d of our submixes had drifted", drifted)
@@ -887,9 +887,9 @@ RegisterConsoleCommandHandler("dmx_verify", function()
     return true
 end)
 
-RegisterConsoleCommandHandler("dmx_set", function(_, parameters)
+RegisterConsoleCommandHandler("lac_set", function(_, parameters)
     if #parameters < 2 then
-        log("usage: dmx_set Submixes/SS_Music 0.5")
+        log("usage: lac_set Submixes/SS_Music 0.5")
         return true
     end
     local relpath = parameters[1]

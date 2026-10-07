@@ -136,10 +136,10 @@ if (Test-Path $ini) {
 
 Write-Host ""
 Write-Host "Mod"
-$mod = Join-Path $GamePath "Griffin\Binaries\Win64\ue4ss\Mods\DialogueMix\Scripts\main.lua"
+$mod = Join-Path $GamePath "Griffin\Binaries\Win64\ue4ss\Mods\LoudAndClear\Scripts\main.lua"
 if (Test-Path $mod) {
     $deployed = (Get-FileHash -LiteralPath $mod -Algorithm SHA256).Hash
-    $source = (Get-FileHash -LiteralPath (Join-Path $RepoRoot "Mods\DialogueMix\Scripts\main.lua") -Algorithm SHA256).Hash
+    $source = (Get-FileHash -LiteralPath (Join-Path $RepoRoot "Mods\LoudAndClear\Scripts\main.lua") -Algorithm SHA256).Hash
     if ($deployed -eq $source) { Ok "deployed copy matches the repo" }
     else { $notes += "deployed copy differs from the repo (run install.ps1 -ModOnly)" }
 }
@@ -151,13 +151,13 @@ else {
 
 Write-Host ""
 Write-Host "Captured baseline"
-$baseline = Join-Path $env:LOCALAPPDATA "StarWarsGalacticRacer\Saved\DialogueMix-baseline.txt"
+$baseline = Join-Path $env:LOCALAPPDATA "StarWarsGalacticRacer\Saved\LoudAndClear-baseline.txt"
 if (Test-Path $baseline) {
     $classLines = Select-String -LiteralPath $baseline -Pattern "^class:" | ForEach-Object { $_.Line }
     if ($classLines) {
         Ok "present: $($classLines -join ', ')"
         if ($hash -ne $known.game.sha256) {
-            $notes += "exe changed, so run dmx_forget in game to re-capture authored volumes"
+            $notes += "exe changed, so run lac_forget in game to re-capture authored volumes"
         }
     }
 }
