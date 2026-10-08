@@ -189,6 +189,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", default=DEFAULT_VERSION)
     ap.add_argument("--outdir", default=os.path.join(ROOT, "dist"))
+    ap.add_argument("--with-signatures", action="store_true",
+                    help="also bundle the UE4SS AOB signatures "
+                         "(off by default: they are UE4SS config, not mod files)")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -213,16 +216,22 @@ def main():
                 z.write(full, rel)
                 written.append(rel)
 
-        for name in sorted(os.listdir(sig_src)):
-            if name.endswith(".lua"):
-                rel = os.path.join("optional - UE4SS signatures", name)
-                z.write(os.path.join(sig_src, name), rel)
-                written.append(rel)
+        # Signatures are off by default. They are UE4SS configuration rather than
+        # mod files, and bundling them invites someone to overwrite a working
+        # UE4SS setup they did not need to touch. They live in the repo for
+        # anyone who hits the scan failure described in the README.
+        if args.with_signatures:
+            for name in sorted(os.listdir(sig_src)):
+                if name.endswith(".lua"):
+                    rel = os.path.join("optional - UE4SS signatures", name)
+                    z.write(os.path.join(sig_src, name), rel)
+                    written.append(rel)
+            z.writestr("optional - UE4SS signatures/README.txt",
+                       SIG_README.replace("\n", "\r\n"))
+            written.append("optional - UE4SS signatures/README.txt")
 
         z.writestr("README.txt", MOD_README.replace("\n", "\r\n"))
-        z.writestr("optional - UE4SS signatures/README.txt",
-                   SIG_README.replace("\n", "\r\n"))
-        written += ["README.txt", "optional - UE4SS signatures/README.txt"]
+        written.append("README.txt")
 
     print("wrote %s  (%.0f KB)" % (out, os.path.getsize(out) / 1024))
     for rel in written:
