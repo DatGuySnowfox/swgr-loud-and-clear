@@ -91,6 +91,23 @@ local CONFIG = {
         ["Submixes/SS_Commentary"]                     = "Modulation/Submixes/CB_SubmixCommentary",
     },
 
+    -- The volume these sound classes ship at, and how far a captured value may
+    -- stray from it before the mod refuses to believe it.
+    --
+    -- Capturing only happens when there is no stored baseline. If the mod has
+    -- already applied in this process and the stored file then goes missing, the
+    -- next capture reads this mod's own output back as the authored value and
+    -- multiplies it again. That is not hypothetical: moving the baseline file
+    -- aside while the game was running, then triggering a hot reload, took
+    -- SC_Voice to 2.890 and left a baseline claiming 1.700 was authored.
+    --
+    -- Every one of this game's 61 sound classes reads 1.0, on two separate
+    -- builds. So a capture that is not 1.0 is far more likely to be our own
+    -- output than a real change. Refuse it loudly rather than compounding. If a
+    -- patch genuinely rebalances the mix, the log says so and this gets updated.
+    expected_class_volume = 1.0,
+    baseline_tolerance = 0.01,
+
     apply_on_start = true,
 
     -- Off by default, and it should stay off outside of investigation.
@@ -418,6 +435,19 @@ local function set_class_multiplier(relpath, multiplier)
             log("%s: Properties.Volume is not readable, skipping", relpath)
             return false
         end
+
+        -- Only believe a capture that looks authored. See expected_class_volume.
+        if math.abs(current - CONFIG.expected_class_volume) > CONFIG.baseline_tolerance then
+            log("%s reads %.3f, but these classes ship at %.3f.",
+                relpath, current, CONFIG.expected_class_volume)
+            log("  Refusing to record that as the authored value. It is most")
+            log("  likely this mod's own output from an earlier apply, and")
+            log("  treating it as authored would compound the boost.")
+            log("  Restart the game to recover, or set expected_class_volume")
+            log("  in CONFIG if a patch really did rebalance the mix.")
+            return false
+        end
+
         class_baseline[relpath] = current
         -- Persist before writing, so a crash or reload cannot leave the boosted
         -- value as the only record of what was authored.
