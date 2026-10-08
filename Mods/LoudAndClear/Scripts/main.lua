@@ -897,6 +897,29 @@ local function open_panel()
     model.selection = 1
     model.bypassed = not applied
 
+    -- Refuse to open during a cutscene.
+    --
+    -- Closing froze the game once, opened mid-cutscene, and taking exclusive UI
+    -- input while a cinematic is also driving focus is the leading suspect.
+    -- APlayerController::bCinematicMode is the engine's own flag for that state.
+    --
+    -- Best effort, not a guarantee: a game can run cinematics without setting
+    -- it. The value is logged either way, so if a freeze recurs with this
+    -- reporting false, the flag is not the right signal here and the log says so
+    -- rather than leaving it to be guessed at.
+    local cinematic
+    pcall(function() cinematic = pc.bCinematicMode end)
+    vlog("panel: bCinematicMode = %s", tostring(cinematic))
+
+    if cinematic == true then
+        log("not opening during a cutscene. Press %s again once it ends.",
+            "HOME")
+        log("  Closing the panel mid-cutscene froze the game once, so this is")
+        log("  blocked until it is understood. panel_grabs_input = false in")
+        log("  CONFIG removes the mechanism and lifts this restriction.")
+        return false
+    end
+
     vlog("panel: building widgets")
     local created, err = pcall(function()
         return Panel.create(pc, model, CONFIG.duck_order)
