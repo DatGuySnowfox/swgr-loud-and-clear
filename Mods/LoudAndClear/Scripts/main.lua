@@ -140,6 +140,19 @@ local CONFIG = {
     -- true. Set false once that question is answered.
     log_cutscene_state = true,
 
+    -- Whether the panel refuses to open during a cutscene, and closes itself if
+    -- one starts while it is open.
+    --
+    -- This is containment, not the fix. The fix is in Panel.lua: the host no
+    -- longer instantiates a game blueprint. With the guard on, the panel is
+    -- never open during a cutscene, which also means the fix never gets tested,
+    -- because the crash needs the panel open during one.
+    --
+    -- So: leave it true for normal use. Set it false only to deliberately test
+    -- whether the host rebuild holds, knowing that is the exact condition that
+    -- used to take the game down. Save your progress first.
+    cutscene_guard = true,
+
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
     -- or are passed to lac_set. Gain on a parent is inherited by its children,
@@ -940,26 +953,37 @@ end
 -- fired. UMovieSceneSequencePlayer::IsPlaying is a plain BlueprintPure bool and
 -- reads back cleanly.
 --
--- Best effort. If this game drives some cinematics without a sequence player,
--- this returns false and the panel opens anyway. lac_cutscene prints what it can
--- see, so run it during a cutscene to find out rather than assuming.
+-- Confirmed working in this game: it reports true for the duration of a cutscene
+-- and false either side, and the sequences it names are the real ones.
+--
+-- Still best effort. If some cinematic runs without a sequence player this
+-- returns false and the panel opens anyway, and if an ambient looping sequence
+-- counts as playing it could refuse when there is no cutscene. The automatic
+-- start/end logging is there to make either show up.
 local SEQUENCE_CLASSES = { "LevelSequencePlayer", "MovieSceneSequencePlayer" }
 local cutscene_was = false
+local refusal_logged = false
 
 local function cutscene(report)
     local playing, seen = false, 0
+    -- FindAllOf matches subclasses, so every LevelSequencePlayer also comes back
+    -- under MovieSceneSequencePlayer. Without this the count was doubled and the
+    -- log claimed six players where there were three.
+    local counted = {}
     for _, name in ipairs(SEQUENCE_CLASSES) do
         pcall(function()
             local found = FindAllOf(name)
             if not found then return end
             for _, player in ipairs(found) do
                 if valid(player) then
-                    seen = seen + 1
-                    local ok, active = pcall(function() return player:IsPlaying() end)
-                    if ok and active == true then
-                        playing = true
-                        if report then
-                            report("  playing: %s", player:GetFullName())
+                    local id = player:GetFullName()
+                    if not counted[id] then
+                        counted[id] = true
+                        seen = seen + 1
+                        local ok, active = pcall(function() return player:IsPlaying() end)
+                        if ok and active == true then
+                            playing = true
+                            if report then report("  playing: %s", id) end
                         end
                     end
                 end
@@ -995,15 +1019,23 @@ local function open_panel()
     model.selection = 1
     model.bypassed = not applied
 
-    local playing, seen = cutscene(vlog)
-    vlog("panel: cutscene = %s (%d sequence players)", tostring(playing), seen)
-
-    if playing then
-        log("not opening during a cutscene. Press HOME again once it ends.")
-        log("  Every freeze this mod has caused happened in one, so the panel")
-        log("  stays shut until it ends. Run lac_cutscene if this looks wrong.")
+    -- Said once per cutscene, not once per keypress. The first version reported
+    -- it on every press and logged 37 refusals in 18 seconds, which is what
+    -- pressing a key that appears to do nothing actually looks like.
+    local playing, seen = cutscene()
+    if playing and not CONFIG.cutscene_guard then
+        log("cutscene in progress, opening anyway (cutscene_guard = false)")
+    elseif playing then
+        if not refusal_logged then
+            refusal_logged = true
+            log("not opening during a cutscene. Press HOME again once it ends.")
+            log("  Every freeze this mod has caused happened in one, so the panel")
+            log("  stays shut until it ends. Ctrl+F10 reports what it can see.")
+        end
         return false
     end
+    refusal_logged = false
+    vlog("panel: cutscene = false (%d sequence players)", seen)
 
     if panel_cached and valid(panel_cached.widget) then
         vlog("panel: reusing widgets")
@@ -1213,7 +1245,7 @@ panel_tick = function()
                     -- refusing to open during one is not enough on its own. Once
                     -- a second, because this walks the object array and the
                     -- panel is the thing being kept cheap.
-                    if tick % 10 == 5 and cutscene() then
+                    if CONFIG.cutscene_guard and tick % 10 == 5 and cutscene() then
                         log("cutscene started, closing the panel")
                         close_panel(); panel_events = {}; return
                     end
