@@ -139,7 +139,7 @@ local CONFIG = {
     -- So: leave it true for normal use. Set it false only to deliberately test
     -- whether the host rebuild holds, knowing that is the exact condition that
     -- used to take the game down. Save your progress first.
-    cutscene_guard = false,   -- TESTING: deliberately exercising the crash condition
+    cutscene_guard = true,
 
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
@@ -949,8 +949,9 @@ end
 -- object array, and a build that polled it once a second from mod load took an
 -- access violation reading address 0 inside UE4SS.dll, on a UE4SS thread, while
 -- the menu was loading. The object array is being rewritten during a load and
--- iterating it then is not safe. A Lua pcall does not catch that; it is a native
--- fault and it takes the process down.
+-- iterating it then is not safe. A Lua pcall is no protection, because the fault
+-- is native. UE4SS's own handler caught that one and the game carried on after a
+-- Fatal Error dialog, but surviving a null dereference is luck, not a design.
 --
 -- The panel tick is a safe caller because it already bails out while
 -- panel_suspended is set, which the LoadMap hooks cover.

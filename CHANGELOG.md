@@ -38,9 +38,10 @@
   `LevelSequencePlayer` objects, and false after.
 
   A build that polled this once a second from mod load, to log starts and ends
-  automatically, crashed the game during a menu load: an access violation reading
-  address 0 inside `UE4SS.dll`. `FindAllOf` walks the object array, which is
-  being rewritten during a load. That poll is gone; the check runs only on a
+  automatically, faulted during a menu load: an access violation reading address
+  0 inside `UE4SS.dll`. `FindAllOf` walks the object array, which is being
+  rewritten during a load. UE4SS caught it and the game continued after a Fatal
+  Error dialog, but that is luck. The poll is gone; the check now runs only on a
   keypress or while the panel is already open.
 
 - **Ctrl+F10** writes the same report on demand, and `lac_cutscene` does it from

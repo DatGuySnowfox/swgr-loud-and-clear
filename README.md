@@ -165,9 +165,12 @@ for anyone who has one turned on.
 
 One thing not to do with it: an earlier build polled this once a second from mod
 load, to log cutscene starts and ends automatically. That took an access
-violation reading address 0 inside `UE4SS.dll` while the menu was loading.
+violation reading address 0 inside `UE4SS.dll` while the menu was loading, caught
+three times over: twice by ProcDump and once by UE4SS's own handler.
 `FindAllOf` walks the whole object array, the array is being rewritten during a
-load, and a Lua `pcall` does not catch a native fault. The check now runs only on
+load, and a Lua `pcall` is no protection because the fault is native. UE4SS
+caught it and the game carried on after a Fatal Error dialog, which is luck
+rather than something to rely on. The check now runs only on
 a keypress or while the panel is already open, and the panel tick already stops
 while a level is loading.
 
