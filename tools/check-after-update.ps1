@@ -60,42 +60,53 @@ else {
     }
 }
 
-# --- 2. the anchor pattern ------------------------------------------------
+# --- 2. the signatures ----------------------------------------------------
+
+# Delegated to check-signatures.py rather than scanned here.
+#
+# This used to walk the executable byte by byte in PowerShell: around 490 million
+# loop iterations, minutes of CPU, to check one anchor. The Python checker does
+# the whole job in under a second with a compiled regex, and does it better,
+# because it resolves all four signatures to addresses instead of only confirming
+# that an anchor still exists. An anchor that still matches on a changed binary is
+# exactly the case that looks fine and is not.
 
 if (Test-Path $exe) {
     Write-Host ""
-    Write-Host "Signature anchor"
-    # 48 8D 0D ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? C6 05 ? ? ? ? 01
-    $bytes = [System.IO.File]::ReadAllBytes($exe)
-    $matchCount = 0
-    $firstAt = -1
-    for ($i = 0; $i -lt $bytes.Length - 29; $i++) {
-        if ($bytes[$i] -ne 0x48) { continue }
-        if ($bytes[$i+1] -ne 0x8D -or $bytes[$i+2] -ne 0x0D) { continue }
-        if ($bytes[$i+7] -ne 0xE8 -or $bytes[$i+12] -ne 0xE8 -or $bytes[$i+17] -ne 0xE8) { continue }
-        if ($bytes[$i+22] -ne 0xC6 -or $bytes[$i+23] -ne 0x05 -or $bytes[$i+28] -ne 0x01) { continue }
-        $matchCount++
-        if ($firstAt -lt 0) { $firstAt = $i }
+    Write-Host "Signatures"
+
+    $checker = Join-Path $PSScriptRoot "check-signatures.py"
+    $python = $null
+    foreach ($candidate in @("python", "py", "python3")) {
+        $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($cmd) { $python = $cmd.Source; break }
     }
 
-    if ($matchCount -eq $known.signature_anchor.expected_matches) {
-        if ($hash -eq $known.game.sha256) {
-            Ok "matches once, at file offset 0x$($firstAt.ToString('X'))"
-        }
-        else {
-            Warn "still matches once, at 0x$($firstAt.ToString('X')), but on a CHANGED exe."
-            Warn "This is the dangerous case: the scan will look successful and"
-            Warn "resolve to wrong addresses. Do not launch until the RVAs are redone."
-        }
+    if (-not (Test-Path $checker)) {
+        Warn "check-signatures.py is missing, cannot verify the signatures"
+        $notes += "restore tools/check-signatures.py and re-run"
     }
-    elseif ($matchCount -eq 0) {
-        Warn "no longer matches. UE4SS will fail its scan and refuse to start,"
-        Warn "which at least fails loudly rather than crashing."
-        $problems += "anchor pattern gone"
+    elseif (-not $python) {
+        Warn "Python not found, so the signatures were NOT checked."
+        Warn "This is the part that matters most after a patch. Install Python"
+        Warn "and run: python tools\check-signatures.py"
+        $notes += "signatures unverified (no Python)"
     }
     else {
-        Warn "matches $matchCount times (expected 1). Ambiguous, scan will reject."
-        $problems += "anchor pattern ambiguous"
+        $output = & $python $checker --exe $exe 2>&1
+        $failed = $LASTEXITCODE -ne 0
+        foreach ($line in $output) {
+            $text = [string]$line
+            if ($text -match "^\s*\w+\s+\d+ match") { Write-Host "  $($text.Trim())" }
+            elseif ($text -match "WOULD BE REJECTED|^All signatures") { Write-Host "  $($text.Trim())" }
+        }
+        if ($failed) {
+            Bad "one or more signatures would be rejected, see above"
+            $problems += "signatures do not resolve on this build"
+        }
+        else {
+            Ok "all four resolve cleanly on this build"
+        }
     }
 }
 

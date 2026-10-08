@@ -1,10 +1,11 @@
 {
   "_comment": "Fingerprints of the build this mod was developed and verified against. tools/check-after-update.ps1 compares the installed game to these and reports what needs re-checking. Update the values here after re-verifying against a new build.",
-  "verified": "2026-10-07",
+  "verified": "2026-10-08",
   "game": {
     "exe": "Griffin/Binaries/Win64/SWGR-Win64-Shipping.exe",
-    "size": 488290328,
-    "sha256": "825d4e6e639b541abbc008f728d2ad16422bb74bdcf6b4844f60bcfaac502d7e"
+    "size": 490551832,
+    "sha256": "e7d7f8603ad54a3ff308c5c9fdf8cb8ad3481382ad409fec5a03ff92af3fc116",
+    "steam_buildid": "25801363"
   },
   "ue4ss": {
     "dll": "Griffin/Binaries/Win64/ue4ss/UE4SS.dll",
@@ -17,9 +18,10 @@
     "expected_matches": 1,
     "expected_rva": "0x238D414",
     "hardcoded_targets": {
+      "_comment": "Recorded only to show what the address-based files would have produced. Build 25801363 moved two of them by 0x6F0, so those files would have resolved into the middle of other code while UE4SS reported a successful scan.",
       "GMalloc": "0xAB747C8",
-      "FName_ToString": "0x3752404",
-      "FName_Constructor": "0x3C7DB26"
+      "FName_ToString": "0x3752AF4 (was 0x3752404)",
+      "FName_Constructor": "0x3C7E216 (was 0x3C7DB26)"
     }
   },
   "sound_classes": {

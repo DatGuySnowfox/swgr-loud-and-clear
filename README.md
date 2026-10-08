@@ -201,6 +201,26 @@ and resolve relatively. Verified equivalent on the reference build:
 `GMalloc` matching three sites is a feature: UE4SS dedupes by resolved value, so
 three agreeing sites means two can disappear and it still works.
 
+### This has now been tested by a real patch
+
+Steam build `25801363` (2026-10-08) changed the executable from 488,290,328 to
+490,551,832 bytes. The content-based patterns found all four targets. The
+address-based files would not have:
+
+| Signature | Old files would give | Actually is | Result |
+| --- | --- | --- | --- |
+| `FName_ToString` | `0x3752404` | `0x3752AF4` | wrong by `0x6F0` |
+| `FName_Constructor` | `0x3C7DB26` | `0x3C7E216` | wrong by `0x6F0` |
+| `GMalloc` | `0xAB747C8` | `0xAB747C8` | correct |
+
+Note what makes this the bad case rather than an obvious one: the anchor did not
+move, so the old files would have computed the correct image base, then jumped
+0x6F0 bytes short of both functions into the middle of other code. UE4SS would
+have reported a successful scan and crashed.
+
+The mod's own asset paths and all seven ducked submixes survived the patch
+untouched.
+
 Before launching after a patch:
 
 ```powershell
