@@ -42,6 +42,11 @@
   the console. The console is off by default in UE4SS, so the key is the one that
   works without changing any settings.
 
+- `cutscene_guard` in `CONFIG`, default true. With the guard on the panel is
+  never open during a cutscene, which also means the host rebuild above never
+  gets tested, because the crash needs the panel open during one. Setting it
+  false is the only way to put the fix under the condition it was written for.
+
 - `tools/resolve-address.py` resolves an address in the shipping executable to
   its enclosing function and disassembles it, reading the PE exception directory
   rather than disassembling the whole image. The exe is about 490 MB with roughly

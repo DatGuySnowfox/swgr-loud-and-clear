@@ -174,6 +174,13 @@ Set `log_cutscene_state = false` in `CONFIG` to stop the automatic logging once
 the question is settled. It costs one object-array scan a second, and only while
 `panel_enabled` is true.
 
+**The guard is containment, not the fix**, and having it on means the fix never
+gets exercised: the crash needs the panel open during a cutscene, and the guard
+makes sure it never is. `cutscene_guard = false` in `CONFIG` turns the refusal
+and the auto-close off, which is the only way to put the rebuilt host under the
+condition it was written for. That is the condition that used to take the game
+down, so save first.
+
 Tracked at
 [issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If it
 recurs, a dump still helps, and there is now something specific to look for in
