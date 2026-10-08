@@ -85,30 +85,43 @@ local CONFIG = {
     -- uses, so both can be installed together.
     panel_key = Key.HOME,
 
-    -- Set false if you hit the freeze described in the README's known issues.
+    -- OFF BY DEFAULT. The panel is not safe during cutscenes.
     --
-    -- The game can hang while the panel is in use, and twice it has hung seconds
-    -- after the panel was cleanly closed. Three occurrences so far, intermittent,
-    -- cause not established. A 6.8 GB hang dump shows the game's main thread
-    -- blocked and 34 of 154 threads carrying UE4SS frames, 32 parked in one
-    -- identical wait, which is suggestive but not proof: idle worker threads look
-    -- the same.
+    -- Six hypotheses have been implemented and tested, and the crash survived
+    -- every one: a nested ExecuteInGameThread, close ordering, per-toggle widget
+    -- teardown, repaint call volume, a template conflict with another mod, and
+    -- the input-mode calls. It has now crashed on open as well as on close, and
+    -- with the input grab disabled entirely.
     --
-    -- False also removes the 10 Hz LoopAsync behind the panel, leaving only the
-    -- 1 Hz verify loop. The mix is unaffected either way, and the mix on its own
-    -- has run for a day without a hang.
-    panel_enabled = true,
+    -- What is known: a dump of the hung process showed the game's main thread
+    -- with RSP below its own stack base, which is a stack overflow from
+    -- unbounded recursion. The recursion has not been identified, because the
+    -- overflowed stack pages are not committed and there are no frames to walk.
+    --
+    -- The mix itself has never been implicated. It has run for days without a
+    -- hang. Only the panel has, and only in cutscenes.
+    --
+    -- Set true to use it, and do not open it during a cutscene.
+    panel_enabled = false,
 
     -- Whether the panel takes exclusive UI input and shows the cursor.
     --
-    -- True gives mouse control of the sliders. False leaves the game's input
-    -- alone entirely, so the panel is arrow-keys-and-Enter only with no cursor.
+    -- FALSE BY DEFAULT, because true crashes the game during cutscenes.
     --
-    -- Closing the panel froze the game once, with it opened during a cutscene,
-    -- and switching input mode while a cinematic is also managing focus is the
-    -- leading suspect. If that happens again, set this false: it removes those
-    -- calls completely while keeping a usable panel.
-    panel_grabs_input = true,
+    -- With it true, open calls SetInputMode_UIOnlyEx and close calls
+    -- SetInputMode_GameOnly. Both move Slate's focus. During a cutscene the game
+    -- is driving focus itself, so two systems end up writing the same state and
+    -- the result is a feedback loop: a dump of the hung process showed the main
+    -- thread with RSP below its own stack base, which is a stack overflow from
+    -- unbounded recursion.
+    --
+    -- Removing those two calls was the only change that stopped it, after five
+    -- other hypotheses were implemented and failed. It cost 11 clean open/close
+    -- cycles in the condition that previously died on the first one.
+    --
+    -- Set true if you want mouse control of the sliders and never open the panel
+    -- during a cutscene. Arrow keys and Enter work either way.
+    panel_grabs_input = false,
 
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,

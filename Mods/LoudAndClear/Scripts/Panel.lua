@@ -181,7 +181,7 @@ function Panel.create(controller, model, order)
     button("close", "Close", mode_row)
     add(mode_row, 32, 4)
 
-    add(label("Bypass compares against the game's own mix.", 12, MUTED), 17, 1)
+    add(label("Arrow keys move, Enter activates.", 12, MUTED), 17, 1)
     add(label("Saved values load automatically next launch.", 12, MUTED), 17, 0)
 
     slot:SetSize({ X = self.width, Y = self.height })
