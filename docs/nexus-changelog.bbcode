@@ -1,0 +1,23 @@
+[size=4][b]1.1.5[/b][/size]
+
+[b]New: an in-game mix panel.[/b] Press [b]HOME[/b]. Nine sliders, voice level and the seven channels that compete with it, each with a live dB readout. Everything applies as you drag, so you hear each change while you make it. Save, Undo, Mod defaults, and a Bypass toggle for comparing against the game's own mix. Mouse, or arrow keys and Enter.
+
+[b]New: your settings are saved.[/b] What you set in the panel is kept and reloaded on the next launch, so tuning no longer means editing the Lua by hand.
+
+[b]Compatible with the 8 October game patch (build 25801363).[/b] That patch moved two of the addresses UE4SS uses to find the engine. If UE4SS started crashing for you after it, that is why, and replacement signature files are in the GitHub repo under Signatures/.
+
+[b]Fixed: the mod no longer scans the whole audio graph on every launch.[/b] That was a leftover from working out how the game's audio is wired. It did several hundred object lookups at startup for information that is now written down.
+
+[b]Fixed: dialogue can no longer end up louder than you asked for.[/b] Under some reload conditions the mod could read its own boosted output back as the game's original level and boost it again, compounding each time. It now refuses to record a value that is not the authored one, and says so in the log.
+
+[b]Known issue: the panel can hang the game.[/b] It can freeze while the panel is in use, and twice it has frozen a few seconds after the panel was closed. Three occurrences, intermittent, cause not yet established.
+
+If you hit it, open [font=Courier New]Scripts\main.lua[/font] and set [font=Courier New]panel_enabled = false,[/font] which removes the panel and the timer behind it. Your mix is unaffected: it still applies on launch and the console commands still work. The audio side on its own has run for a day without a hang.
+
+Tracked at [url=https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1]github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1[/url], which lists what has already been ruled out. If you can capture a dump, it would genuinely help.
+
+[b]Note on the download:[/b] it no longer bundles the UE4SS signature files. They are UE4SS configuration rather than mod files, and shipping them invited overwriting a working setup that never needed touching. They are in the repo for anyone who needs them.
+
+[size=4][b]1.0.0[/b][/size]
+
+Initial release. Boosts the dialogue sound classes to 1.7x and ducks music, crowds, airflow, engines and ambience by 1.9 to 4.4 dB.
