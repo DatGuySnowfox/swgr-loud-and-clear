@@ -1033,7 +1033,11 @@ local function open_panel()
         return false
     end
     refusal_logged = false
-    vlog("panel: cutscene = false (%d sequence players)", seen)
+    -- Not hardcoded to "false": with cutscene_guard off this line is reached
+    -- while a cutscene is playing, and it claimed otherwise one line below
+    -- "cutscene in progress, opening anyway", which read as a detection bug
+    -- when it was only a wrong string.
+    vlog("panel: cutscene = %s (%d sequence players)", tostring(playing), seen)
 
     if panel_cached and valid(panel_cached.widget) then
         vlog("panel: reusing widgets")
