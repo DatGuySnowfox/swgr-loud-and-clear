@@ -573,6 +573,17 @@ end
 -- apply, reset, verify
 ----------------------------------------------------------------------
 
+-- Two different questions, which used to share one flag.
+--
+--   started : has the one-time startup apply succeeded? Only the startup poll
+--             cares, and nothing clears it afterwards.
+--   applied : is our mix in effect right now? Reset clears it, and both the
+--             verify pass and the startup poll must respect that.
+--
+-- Sharing them made Defaults useless: reset cleared the flag, the startup poll
+-- saw "not applied" a tick later and re-applied the whole mix, so the button
+-- appeared to do nothing and got pressed thirteen times in three seconds.
+local started = false
 local applied = false
 local drift_reported = false
 
@@ -601,6 +612,11 @@ local function apply()
         log("applied: %d/%d buses ducked, %d/%d class volumes boosted",
             buses, bus_attempted, classes, class_attempted)
 
+        if buses > 0 or classes > 0 then
+            -- Startup is satisfied. Retry only while nothing has ever landed.
+            started = true
+        end
+
         if buses == 0 and classes == 0 then
             applied = false
             log("nothing applied. Ctrl+F8 dumps the audio graph so you can check")
@@ -627,6 +643,10 @@ end
 -- live value lives inside the modulation system rather than on the object.
 local function verify()
     local drifted, checked = 0, 0
+
+    -- Reset means the user asked for the game's own levels. Re-applying drift
+    -- then would quietly undo that choice.
+    if not applied then return 0 end
 
     if CONFIG.class_boost ~= 1.0 then
         for _, relpath in ipairs(CONFIG.voice_classes) do
@@ -779,6 +799,10 @@ end
 -- Pushes a single changed value straight at the audio engine, so dragging a
 -- slider is audible immediately.
 local function apply_one(key)
+    -- Touching a slider means the user wants our mix, which matters after
+    -- Defaults: it re-engages the verify pass that reset had switched off.
+    applied = true
+
     if key == "class_boost" then
         CONFIG.class_boost = model.class_boost
         for _, relpath in ipairs(CONFIG.voice_classes) do
@@ -1034,7 +1058,7 @@ if CONFIG.apply_on_start then
     LoopAsync(1000, function()
         waited = waited + 1
 
-        if not applied then
+        if not started then
             if world_context() and resolve("Submixes/SS_Main") then
                 log("audio graph is up after %ds, applying", waited)
                 if CONFIG.dump_on_start then dump() end
