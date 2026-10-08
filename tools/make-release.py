@@ -21,7 +21,7 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_VERSION = "1.0.1"
+DEFAULT_VERSION = "1.2.0"
 
 MOD_README = """\
 LOUD AND CLEAR
@@ -31,27 +31,36 @@ A UE4SS Lua mod for STAR WARS: Galactic Racer. It boosts the dialogue sound
 classes and ducks the music, crowds, airflow and engines that bury them.
 
 
-KNOWN ISSUE: THE PANEL CAN HANG THE GAME
-----------------------------------------
-The game can freeze while the mix panel is in use, and twice it has frozen
-a few seconds after the panel was closed. Three occurrences, intermittent,
-cause not yet established.
+ABOUT THE PANEL FREEZE, IF YOU READ ABOUT IT
+--------------------------------------------
+Earlier versions could freeze the game if the mix panel was open during a
+cutscene. That is fixed in this one, and there is a second guard behind the fix.
 
-If you hit it, open Scripts\\main.lua and set:
+What it was: the panel used to borrow one of the game's own widget blueprints
+just to get a widget tree, then swap the tree's root out. That left a live
+blueprint instance on screen running its own graph every frame against a tree it
+no longer recognised. A memory dump taken at a freeze put the game's main thread
+in the engine's blueprint bytecode interpreter with its stack pointer below its
+own stack base, which is runaway recursion.
+
+The panel now builds its own widget from engine classes only and touches no
+blueprint at all. It has been tested with the panel deliberately opened and
+closed eight times during a cutscene, which is what used to kill it.
+
+The second guard: the panel also refuses to open while a cutscene is playing,
+and closes itself if one starts while it is open. So even if some case was
+missed, the panel is not on screen during the risky moment. If you would rather
+it did not do that, set this in the CONFIG block at the top of Scripts\\main.lua:
+
+    cutscene_guard = false,
+
+And to remove the panel and its timer entirely, keeping the mix:
 
     panel_enabled = false,
 
-That removes the panel and the timer behind it. Your mix is unaffected: it
-still applies on launch, and the console commands still work for tuning.
-The audio side on its own has run for a day without a hang.
+The mix itself has never been involved in any of this. It applies once on launch
+and has run for days untouched.
 
-Tracked at:
-  https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1
-
-If you want to help, a crash dump is genuinely useful. Run this before
-launching, and attach whatever it captures to that issue:
-
-    procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:\\temp\\dumps
 
 REQUIREMENTS
 ------------
@@ -81,8 +90,9 @@ INSTALLING
 
 UNINSTALLING
 ------------
-Delete the LoudAndClear folder and remove its line from mods.txt. Volume levels
-are the game's own again next launch. Nothing else is touched.
+Delete the LoudAndClear folder. Volume levels are the game's own again next
+launch. Nothing else is touched. If you had also added a line to mods.txt by
+hand, remove that too.
 
 
 TUNING
@@ -91,10 +101,13 @@ Press HOME in game for the mix panel: nine sliders, voice level and each
 competing channel, with a dB readout on every one. Changes apply as you drag,
 so you hear them while you listen. Save keeps them for next launch.
 
-Arrow keys move between buttons, Enter activates, or use the mouse. The panel
-takes input focus while open, so open it paused rather than mid-race.
+Arrow keys move between buttons and Enter activates. The mouse does not drive
+the panel by default, because taking input focus while the game is also driving
+it is worth avoiding. If you want the cursor, set this in CONFIG:
 
-You can also edit the CONFIG block at the top of Scripts\\main.lua and edit the CONFIG block at the top.
+    panel_grabs_input = true,
+
+You can also edit the CONFIG block at the top of Scripts\\main.lua directly:
 
   class_boost   how much louder dialogue gets. 1.0 is untouched, 2.0 is twice
                 as loud. Default 1.7.
@@ -102,18 +115,18 @@ You can also edit the CONFIG block at the top of Scripts\\main.lua and edit the 
   duck          how far each competing submix drops, as a multiplier of its
                 normal level. Lower is quieter.
 
-You can also tune while the game runs, using the UE4SS console:
+If you have the UE4SS console turned on, you can tune while the game runs:
 
   lac_set Submixes/SS_Music 0.45
-  lac_set Submixes/SS_Vehicles 0.55
   lac_reset
 
 Those take effect immediately but are not saved, so put values you settle on
 into main.lua.
 
-Keys:     Ctrl+F7 re-apply, Ctrl+F8 dump the audio graph, Ctrl+F9 restore
+Keys:     Ctrl+F7 re-apply, Ctrl+F8 dump the audio graph, Ctrl+F9 restore,
+          Ctrl+F10 report whether a cutscene is detected
 Commands: lac_apply, lac_reset, lac_set, lac_verify, lac_dump, lac_param,
-          lac_forget
+          lac_forget, lac_cutscene
 
 
 PLEASE NOTE
@@ -133,7 +146,6 @@ TROUBLESHOOTING
 ---------------
 Everything is logged to ue4ss\\UE4SS.log. A healthy launch looks like:
 
-    PS scan successful
     Starting Lua mod 'LoudAndClear'
     audio graph is up after 6s, applying
     class SC_Voice  1.000 -> 1.700  (x1.70, verified)
@@ -147,6 +159,25 @@ game-specific signature files behind. See the optional folder in this archive.
 
 Dialogue unchanged but the log says "verified": sound class volume is sampled
 when a line starts, so a line already playing will not change. Trigger a new one.
+
+HOME does nothing during a cutscene. That is the guard described above, and the
+log says so.
+
+If the panel stops responding and will not close, restart the game. Deferred
+work in UE4SS can stall, and when it does the panel cannot be closed from
+in-game. If that happens to you, this helps and takes one line:
+
+    ue4ss\\UE4SS-settings.ini
+    DefaultExecuteInGameThreadMethod = ProcessEvent    (instead of EngineTick)
+
+
+REPORTING A PROBLEM
+-------------------
+https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues
+
+Attach ue4ss\\UE4SS.log. If the game crashed outright, UE4SS usually writes its
+own dump next to that log as crash_<date>.dmp, around 50 MB, and that is far
+more useful than a description. No need for any extra tooling.
 
 
 SOURCE

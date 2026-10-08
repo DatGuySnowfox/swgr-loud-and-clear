@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 — 2026-10-08
+## 1.2.0 (2026-10-08)
 
 ### Fixed
 
@@ -20,9 +20,10 @@
   `Panel.lua` now builds a bare `/Script/UMG.UserWidget` and constructs its
   `WidgetTree` by hand. Nothing in the file references `/Game`.
 
-  This is reasoned from the dump, not demonstrated by reproducing the crash and
-  then failing to reproduce it, because it is rare and intermittent. The panel is
-  back on by default but on probation.
+  Tested afterwards with the guard below deliberately switched off, opening and
+  closing the panel eight times during a cutscene, which is the condition that
+  used to kill it. One cutscene is not proof against a crash that was always
+  intermittent, so the guard ships on.
 
 - **The cutscene guard works now.** The 1.1.4 guard read
   `APlayerController::bCinematicMode`, which UE4SS cannot map because it is an
@@ -61,21 +62,24 @@
   prologue's stack reservation, which is what turned a stack overflow into a
   frame count.
 
-## 1.2.0 — 2026-10-08
+### Also in this release, from builds that were never published separately
 
-### Changed
+- The panel was disabled by default for a while, after it crashed on open as
+  well as on close and with the input grab removed entirely. It is on again now
+  that the cause is known and removed.
 
-- **The panel ships disabled.** It had crashed on open as well as on close, and
-  with the input grab removed entirely, so there was no configuration left to
-  recommend. The mix is unaffected and had run for days without a hang.
+- `panel_grabs_input` defaults to false. It was tested as a cause of the
+  cutscene crash and cleared: the crash recurred with those calls gone. It stays
+  off because moving Slate's focus while a cutscene is also driving it is worth
+  avoiding on its own merits. Set it true for mouse control of the sliders.
 
-### Fixed
+- The panel is built once and hidden on close, rather than torn down and rebuilt
+  on every toggle, and the 10 Hz loop behind it runs only while it is open.
+  Repaints happen only when something visible changed, which cut the call volume
+  through UE4SS's hook from about 560 a second to about 230. None of these were
+  the crash, but none of them were worth paying for either.
 
-- Removed the input-mode and cursor calls behind `panel_grabs_input`, testing
-  whether taking exclusive UI input was the trigger. It was not: the crash
-  recurred with them gone.
-
-## 1.1.8 — 2026-10-08
+## 1.1.8 (2026-10-08)
 
 ### Fixed
 
@@ -86,7 +90,7 @@
   recurred, so call volume was not the cause, but the cost was not worth paying
   either way.
 
-## 1.1.7 — 2026-10-08
+## 1.1.7 (2026-10-08)
 
 ### Fixed
 
@@ -99,7 +103,7 @@
   from startup for the whole session. Idle cost is now the 1 Hz verify loop
   alone.
 
-## 1.1.5 — 2026-10-08
+## 1.1.5 (2026-10-08)
 
 ### Known issue
 
@@ -128,7 +132,7 @@
   its own flag. It now handles all three and reports each with a verdict. This
   had already invalidated one A/B test.
 
-## 1.1.3 — 2026-10-08
+## 1.1.3 (2026-10-08)
 
 ### Fixed
 
@@ -161,7 +165,7 @@
   responsible and make the next occurrence diagnosable. Until then, open the
   panel paused or in a menu rather than mid-cutscene.
 
-## 1.1.2 — 2026-10-08
+## 1.1.2 (2026-10-08)
 
 ### Changed
 
@@ -194,7 +198,7 @@
   drives the main bus compressor; engines below about 0.50 costs the racing
   noticeable weight).
 
-## 1.1.0 — 2026-10-08
+## 1.1.0 (2026-10-08)
 
 ### Added
 
@@ -234,7 +238,7 @@
 
 ---
 
-## 1.0.1 — 2026-10-08
+## 1.0.1 (2026-10-08)
 
 **Compatible with the 8 October game patch (Steam build `25801363`).** No changes
 to the mod were needed for it. The mod's target sound classes and all seven
@@ -285,7 +289,7 @@ fix.
 
 ---
 
-## 1.0.0 — 2026-10-07
+## 1.0.0 (2026-10-07)
 
 Initial release. Boosts the dialogue sound classes to 1.7x and ducks music,
 crowds, airflow, engines and ambience by 1.9 to 4.4 dB.

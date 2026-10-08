@@ -1,20 +1,26 @@
-[size=4][b]1.1.5[/b][/size]
+[size=4][b]1.2.0[/b][/size]
 
-[b]New: an in-game mix panel.[/b] Press [b]HOME[/b]. Nine sliders, voice level and the seven channels that compete with it, each with a live dB readout. Everything applies as you drag, so you hear each change while you make it. Save, Undo, Mod defaults, and a Bypass toggle for comparing against the game's own mix. Mouse, or arrow keys and Enter.
+Everything below is new since 1.0.0, which is the only version that was ever published here.
+
+[b]New: an in-game mix panel.[/b] Press [b]HOME[/b]. Nine sliders, voice level and the seven channels that compete with it, each with a live dB readout. Everything applies as you drag, so you hear each change while you make it. Save, Undo, Mod defaults, and a Bypass toggle for comparing against the game's own mix. Arrow keys move, Enter activates.
 
 [b]New: your settings are saved.[/b] What you set in the panel is kept and reloaded on the next launch, so tuning no longer means editing the Lua by hand.
 
-[b]Compatible with the 8 October game patch (build 25801363).[/b] That patch moved two of the addresses UE4SS uses to find the engine. If UE4SS started crashing for you after it, that is why, and replacement signature files are in the GitHub repo under Signatures/.
+[b]Fixed: the panel could freeze the game during a cutscene.[/b] This was the big one, and it is worth saying what it actually was.
 
-[b]Fixed: the mod no longer scans the whole audio graph on every launch.[/b] That was a leftover from working out how the game's audio is wired. It did several hundred object lookups at startup for information that is now written down.
+The panel used to borrow one of the game's own widget blueprints purely because a blueprint widget comes with a usable widget tree, then replace that tree's root with its own. The cost was a live instance of a game blueprint class sitting on screen, running its own graph every frame against a tree it no longer recognised.
+
+A full memory dump taken at one of the freezes put the game's main thread in the engine's blueprint bytecode interpreter, with its stack pointer below its own stack base. That is runaway recursion, not a deadlock, and it ruled out everything that had been tried before it: input handling, widget teardown, redraw volume, and the mod's own Lua.
+
+The panel now builds its own widget from engine classes only and touches no blueprint at all. It was then tested with the safety guard deliberately switched off, opening and closing it eight times during a cutscene, which is what used to kill it.
+
+[b]Added, because one test is not proof:[/b] the panel refuses to open while a cutscene is playing, and closes itself if one starts while it is open. Set [font=Courier New]cutscene_guard = false[/font] in CONFIG if you would rather it did not.
 
 [b]Fixed: dialogue can no longer end up louder than you asked for.[/b] Under some reload conditions the mod could read its own boosted output back as the game's original level and boost it again, compounding each time. It now refuses to record a value that is not the authored one, and says so in the log.
 
-[b]Known issue: the panel can hang the game.[/b] It can freeze while the panel is in use, and twice it has frozen a few seconds after the panel was closed. Three occurrences, intermittent, cause not yet established.
+[b]Fixed: the mod no longer scans the whole audio graph on every launch.[/b] That was a leftover from working out how the game's audio is wired. It did several hundred object lookups at startup for information that is now written down.
 
-If you hit it, open [font=Courier New]Scripts\main.lua[/font] and set [font=Courier New]panel_enabled = false,[/font] which removes the panel and the timer behind it. Your mix is unaffected: it still applies on launch and the console commands still work. The audio side on its own has run for a day without a hang.
-
-Tracked at [url=https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1]github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1[/url], which lists what has already been ruled out. If you can capture a dump, it would genuinely help.
+[b]Compatible with the 8 October game patch (build 25801363).[/b] That patch moved two of the addresses UE4SS uses to find the engine. If UE4SS started crashing for you after it, that is why, and replacement signature files are in the GitHub repo under Signatures/.
 
 [b]Note on the download:[/b] it no longer bundles the UE4SS signature files. They are UE4SS configuration rather than mod files, and shipping them invited overwriting a working setup that never needed touching. They are in the repo for anyone who needs them.
 

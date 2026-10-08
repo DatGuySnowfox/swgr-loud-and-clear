@@ -24,21 +24,29 @@ It only touches volume. No gameplay, saves, visuals or files inside the game are
 
 [b]I still can't guarantee fixes if a future update breaks this.[/b] UE4SS finds the engine by scanning for byte patterns, and a patch can move them. That is exactly why it's open source: the repo includes the tools to check whether an update broke anything before you launch, the reasoning behind every value, and notes on the game's audio layout so anyone can pick it up and fix it without starting from scratch.
 
-[size=4][b]Known issue: the panel is off by default[/b][/size]
+[size=4][b]Fixed in 1.2.0: the panel could freeze the game during a cutscene[/b][/size]
 
-[b]The mix panel can freeze the game during cutscenes.[/b] It has done it on close and on open, intermittently. Because of that it now ships disabled, and the mix applies on launch without it.
+If you read about this before, it is fixed, and there is a second guard behind the fix.
 
-If you want to try it, open [font=Courier New]Scripts\main.lua[/font] and set:
+[b]What it was.[/b] The panel used to borrow one of the game's own widget blueprints purely because a blueprint widget comes with a usable widget tree, then replace that tree's root with its own. That left a live instance of a game blueprint class on screen, running its own graph every frame against a tree it no longer recognised.
 
-[code]panel_enabled = true,[/code]
+A full memory dump taken at one of the freezes put the game's main thread in the engine's blueprint bytecode interpreter with its stack pointer below its own stack base, which is runaway recursion rather than a deadlock. That reading ruled out everything tried before it: input handling, widget teardown, redraw volume, and the mod's own Lua.
 
-Outside cutscenes it has been reliable. Your mix is unaffected either way: everything applies on launch, and the console commands still work for tuning.
+[b]The fix.[/b] The panel now builds its own widget from engine classes only, and touches no blueprint at all. It was then tested with the guard below deliberately switched off, opening and closing it eight times during a cutscene, which is the condition that used to kill it.
 
-[b]The cause is identified.[/b] A full-memory dump taken at the freeze shows the game's main thread with its stack pointer below its own stack base, which is a stack overflow from runaway recursion, not a deadlock. Reading the shipping executable at the faulting address identifies the function as the engine's handler for the Blueprint [font=Courier New]Context[/font] opcode, the thing that runs when a Blueprint node dereferences its target.
+[b]The guard.[/b] One cutscene is not proof against a crash that was always intermittent, so the panel also refuses to open while a cutscene is playing and closes itself if one starts. If you would rather it did not, set this in the CONFIG block at the top of [font=Courier New]Scripts\main.lua[/font]:
 
-So the runaway recursion is in Blueprint code, which rules out the whole family of causes that were being chased before: input handling, widget teardown, redraw volume, and the mod's own Lua. The panel's one point of contact with Blueprint code is that it borrows one of the game's own widget blueprints to get a widget tree and then swaps the tree's root out. Rebuilding it without that is the next step, and the panel stays off until it holds up.
+[code]cutscene_guard = false,[/code]
 
-Tracked on GitHub, with everything that has been ruled out written down. If you hit it, a dump still helps and there is now something specific to look for. Run [font=Courier New]procdump64.exe -h -e -ma -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps[/font] before launching and attach whatever it captures to the issue.
+And to remove the panel and its timer entirely while keeping the mix:
+
+[code]panel_enabled = false,[/code]
+
+The mix itself was never involved in any of this. It applies once on launch and has run for days untouched.
+
+[b]If the panel ever stops responding and will not close[/b], restart the game, then open [font=Courier New]ue4ss\UE4SS-settings.ini[/font] and set [font=Courier New]DefaultExecuteInGameThreadMethod = ProcessEvent[/font] instead of [font=Courier New]EngineTick[/font]. Work the mod defers to the game thread can stall on the default setting, and when it does the panel cannot be closed from in-game.
+
+Reports welcome on GitHub. Attach [font=Courier New]ue4ss\UE4SS.log[/font], and if the game crashed outright, UE4SS usually writes its own dump next to it as [font=Courier New]crash_<date>.dmp[/font], which is far more useful than a description.
 
 [size=4][b]Requirements[/b][/size]
 
@@ -51,7 +59,7 @@ Tracked on GitHub, with everything that has been ruled out written down. If you 
 [list=1]
 [*]Install UE4SS into [font=Courier New]STAR WARS Galactic Racer\Griffin\Binaries\Win64[/font] (you should end up with [font=Courier New]dwmapi.dll[/font] and a [font=Courier New]ue4ss[/font] folder next to [font=Courier New]SWGR-Win64-Shipping.exe[/font])
 [*]Copy the [font=Courier New]LoudAndClear[/font] folder into [font=Courier New]ue4ss\Mods[/font]
-[*]Add the line [font=Courier New]LoudAndClear : 1[/font] to [font=Courier New]ue4ss\Mods\mods.txt[/font]
+[*]That is it. The folder contains [font=Courier New]enabled.txt[/font], which is all UE4SS needs to load it, so there is no [font=Courier New]mods.txt[/font] to edit
 [*]Launch the game
 [/list]
 
@@ -75,7 +83,7 @@ Mouse works, or arrow keys and Enter.
 
 Two things worth knowing. If raising Voice level starts sounding harsh rather than louder, you are driving the compressor on the game's main bus; back it off and take the rest from the channels below. And engines below about half costs the racing noticeable weight, which is a real trade rather than a free win.
 
-The panel takes input focus while open, so open it paused or in a menu rather than mid-race.
+Arrow keys move between buttons and Enter activates. The mouse does not drive the panel by default, because taking input focus while the game is also driving it is worth avoiding. Set [font=Courier New]panel_grabs_input = true[/font] in CONFIG if you want the cursor.
 
 You can also use the UE4SS console, which reaches channels the panel does not list:
 
@@ -88,9 +96,9 @@ Those take effect immediately. When you find values you like, put them in the [f
 
 For dialogue level itself, change [font=Courier New]class_boost[/font], which sits just above [font=Courier New]duck[/font] in the same [font=Courier New]CONFIG[/font] block. [font=Courier New]1.0[/font] is untouched, [font=Courier New]2.0[/font] is twice as loud.
 
-[b]Keys:[/b] Ctrl+F7 re-apply, Ctrl+F8 dump the audio graph to the log, Ctrl+F9 restore the game's own levels, Ctrl+R reload after editing.
+[b]Keys:[/b] Ctrl+F7 re-apply, Ctrl+F8 dump the audio graph to the log, Ctrl+F9 restore the game's own levels, Ctrl+F10 report whether a cutscene is detected, Ctrl+R reload after editing.
 
-[b]Commands:[/b] [font=Courier New]lac_apply[/font], [font=Courier New]lac_reset[/font], [font=Courier New]lac_set[/font], [font=Courier New]lac_verify[/font], [font=Courier New]lac_dump[/font], [font=Courier New]lac_param[/font], [font=Courier New]lac_forget[/font]
+[b]Commands:[/b] [font=Courier New]lac_apply[/font], [font=Courier New]lac_reset[/font], [font=Courier New]lac_set[/font], [font=Courier New]lac_verify[/font], [font=Courier New]lac_dump[/font], [font=Courier New]lac_param[/font], [font=Courier New]lac_forget[/font], [font=Courier New]lac_cutscene[/font]
 
 [size=4][b]Why it ducks instead of only boosting[/b][/size]
 
