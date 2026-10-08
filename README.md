@@ -43,6 +43,7 @@ Nothing to press for the normal behaviour.
 | Ctrl+F7 | Re-apply now |
 | Ctrl+F8 | Dump the audio graph to `UE4SS.log` |
 | Ctrl+F9 | Restore the game's own levels |
+| Ctrl+F10 | Report whether a cutscene is detected, to `UE4SS.log` |
 | Ctrl+R | Reload the mod after editing `main.lua` |
 
 ### The panel
@@ -157,15 +158,21 @@ does not map engine bitfield bools, so reading it returns a `TrivialObject`
 rather than `true` or `false`, and the original guard silently never fired.
 
 That detection is a guess about how this game drives its cinematics, so verify
-it rather than trusting it. During a cutscene, open the console and run:
+it rather than trusting it. Nothing needs running: while the panel is enabled,
+the mod logs `cutscene started` and `cutscene ended` as they happen, so play
+normally and then read `UE4SS.log`.
 
-```
-lac_cutscene
-```
+If no cutscene is ever reported while one is plainly on screen, the guard is
+inert here and only the host rebuild is protecting you.
 
-It prints how many sequence players it can see and whether it considers one to be
-playing. If it says `playing = false` while a cutscene is plainly on screen, the
-guard is inert here and only the host rebuild is protecting you.
+For an answer at a specific moment, **Ctrl+F10** writes the same report to the
+log on demand, and `lac_cutscene` does it from the console for anyone who has one
+turned on. Both print how many sequence players are live and whether any is
+playing.
+
+Set `log_cutscene_state = false` in `CONFIG` to stop the automatic logging once
+the question is settled. It costs one object-array scan a second, and only while
+`panel_enabled` is true.
 
 Tracked at
 [issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If it
@@ -205,6 +212,7 @@ Console commands, with the console enabled via `ConsoleEnabled = 1` in
 | `lac_dump` | Dump the audio graph |
 | `lac_param <relpath>` | Print every property on an object |
 | `lac_forget` | Discard stored authored volumes and re-capture |
+| `lac_cutscene` | Same report as Ctrl+F10 |
 
 `lac_set` is the fast way to tune by ear, no reload needed:
 

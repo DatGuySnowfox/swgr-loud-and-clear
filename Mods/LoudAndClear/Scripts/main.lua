@@ -114,22 +114,31 @@ local CONFIG = {
 
     -- Whether the panel takes exclusive UI input and shows the cursor.
     --
-    -- FALSE BY DEFAULT, because true crashes the game during cutscenes.
-    --
     -- With it true, open calls SetInputMode_UIOnlyEx and close calls
-    -- SetInputMode_GameOnly. Both move Slate's focus. During a cutscene the game
-    -- is driving focus itself, so two systems end up writing the same state and
-    -- the result is a feedback loop: a dump of the hung process showed the main
-    -- thread with RSP below its own stack base, which is a stack overflow from
-    -- unbounded recursion.
+    -- SetInputMode_GameOnly, and the mouse drives the sliders. Arrow keys and
+    -- Enter work either way.
     --
-    -- Removing those two calls was the only change that stopped it, after five
-    -- other hypotheses were implemented and failed. It cost 11 clean open/close
-    -- cycles in the condition that previously died on the first one.
+    -- FALSE BY DEFAULT, but not because this was the bug. It was tested as the
+    -- sixth hypothesis for the cutscene crash and cleared: the crash recurred
+    -- with these calls removed entirely. The dump later put the fault in the
+    -- Blueprint VM, which is a different layer again.
     --
-    -- Set true if you want mouse control of the sliders and never open the panel
-    -- during a cutscene. Arrow keys and Enter work either way.
+    -- It stays off because moving Slate's focus while a cutscene is also driving
+    -- it is worth avoiding on its own merits, and because the panel is already
+    -- on probation. Turning it on is reasonable once the probation ends.
     panel_grabs_input = false,
+
+    -- Logs when a cutscene starts and ends, while the panel is on probation.
+    --
+    -- The cutscene guard assumes this game drives its cinematics through level
+    -- sequences, which is a guess. This answers whether it does without needing
+    -- the console: play normally, then read UE4SS.log. If no cutscene is ever
+    -- reported while one is plainly on screen, the guard is inert here and only
+    -- the rebuilt panel host is protecting anything.
+    --
+    -- Costs one object-array scan a second, and only while panel_enabled is
+    -- true. Set false once that question is answered.
+    log_cutscene_state = true,
 
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
@@ -935,6 +944,7 @@ end
 -- this returns false and the panel opens anyway. lac_cutscene prints what it can
 -- see, so run it during a cutscene to find out rather than assuming.
 local SEQUENCE_CLASSES = { "LevelSequencePlayer", "MovieSceneSequencePlayer" }
+local cutscene_was = false
 
 local function cutscene(report)
     local playing, seen = false, 0
@@ -960,6 +970,18 @@ local function cutscene(report)
         report("  %d sequence player(s) visible, playing = %s", seen, tostring(playing))
     end
     return playing, seen
+end
+
+-- Shared by the Ctrl+F10 bind and the lac_cutscene command, because the console
+-- is not on by default and asking someone to turn it on to answer one question
+-- is a worse deal than a key.
+local function report_cutscene()
+    log("cutscene check:")
+    local playing, seen = cutscene(log)
+    if seen == 0 then
+        log("  no sequence players exist at all, so the guard is inert here")
+    end
+    log("  the panel would %s right now", playing and "refuse to open" or "open")
 end
 
 local function open_panel()
@@ -1223,6 +1245,10 @@ RegisterKeyBindAsync(Key.F7, { ModifierKey.CONTROL }, function() apply() end)
 RegisterKeyBindAsync(Key.F8, { ModifierKey.CONTROL }, function() dump() end)
 RegisterKeyBindAsync(Key.F9, { ModifierKey.CONTROL }, function() reset() end)
 
+-- Press during a cutscene, then read the log. Same report as lac_cutscene, for
+-- anyone who does not have the console turned on.
+RegisterKeyBindAsync(Key.F10, { ModifierKey.CONTROL }, function() report_cutscene() end)
+
 RegisterConsoleCommandHandler("lac_apply", function() apply() return true end)
 RegisterConsoleCommandHandler("lac_dump", function() dump() return true end)
 RegisterConsoleCommandHandler("lac_reset", function() reset() return true end)
@@ -1256,12 +1282,7 @@ end)
 -- obviously on screen, the panel's cutscene guard cannot see this game's
 -- cinematics and that needs knowing before trusting it.
 RegisterConsoleCommandHandler("lac_cutscene", function()
-    log("cutscene check:")
-    local playing, seen = cutscene(log)
-    if seen == 0 then
-        log("  no sequence players exist at all, so the guard is inert here")
-    end
-    log("  the panel would %s", playing and "refuse to open" or "open")
+    report_cutscene()
     return true
 end)
 
@@ -1326,6 +1347,16 @@ if CONFIG.apply_on_start then
                 return true
             end
             return false
+        end
+
+        -- Answers the "can the guard see this game's cutscenes" question without
+        -- anyone having to run a command: play normally, then read the log.
+        if CONFIG.log_cutscene_state and CONFIG.panel_enabled then
+            local ok, playing = pcall(cutscene)
+            if ok and playing ~= cutscene_was then
+                cutscene_was = playing
+                log("cutscene %s", playing and "started" or "ended")
+            end
         end
 
         if CONFIG.verify_seconds <= 0 then

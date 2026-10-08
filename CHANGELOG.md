@@ -33,9 +33,14 @@
 
 ### Added
 
-- `lac_cutscene` reports how many sequence players are live and whether any is
-  playing. Run it during a cutscene to confirm the guard can actually see this
-  game's cinematics, rather than assuming it can.
+- **Cutscene starts and ends are logged automatically** while the panel is
+  enabled, so confirming the guard can see this game's cinematics needs nothing
+  but playing and then reading `UE4SS.log`. Turn it off with
+  `log_cutscene_state = false` once that is settled.
+
+- **Ctrl+F10** writes the same report on demand, and `lac_cutscene` does it from
+  the console. The console is off by default in UE4SS, so the key is the one that
+  works without changing any settings.
 
 - `tools/resolve-address.py` resolves an address in the shipping executable to
   its enclosing function and disassembles it, reading the PE exception directory
