@@ -64,7 +64,8 @@ values at the engine ten times a second.
 | **Bypass** | A toggle. On means you hear the game's own unmodified mix. |
 | **Close** | Closes the panel. `HOME` does the same. |
 
-Mouse works, or arrow keys to move between buttons and Enter to activate.
+Drag the sliders with the mouse and click the buttons. The panel takes the
+cursor while it is open and hands it back on close.
 
 **Use Bypass to decide whether a change is actually better.** Toggling between
 your mix and the game's is the fastest way to tell, and far more reliable than

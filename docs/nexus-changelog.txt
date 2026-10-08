@@ -8,7 +8,9 @@ New: panel settings are saved and reloaded on the next launch, so tuning no long
 Added: Ctrl+F10 and lac_cutscene report whether a cutscene is currently detected.
 Fixed: dialogue could end up louder than you asked for, because a reload could read the mod's own boosted output back as the game's original level and boost it again.
 Fixed: the mod no longer scans the whole audio graph on every launch, which was several hundred object lookups for information that is now written down.
-Changed: the panel is driven by arrow keys and Enter rather than the mouse. Set panel_grabs_input = true in CONFIG if you want the cursor.
+Fixed: the panel could leave a controller with nowhere to send input, with no panel on screen. Its widget was marked focusable and closing it only hid it rather than removing it, so Slate could leave gamepad focus on a closed panel. It is only focusable now while it actually holds the cursor.
+Fixed: the nine sliders could not be moved. They are dragged with the mouse, and the panel was not taking the cursor, so there was no way to touch them.
+Changed: the mod no longer binds the arrow keys or Enter. A UE4SS keybind cannot be released once registered, so those were permanent hooks on gameplay keys for the whole session.
 Changed: the download no longer bundles the UE4SS signature files. They are UE4SS configuration rather than mod files, and shipping them invited overwriting a working setup. They are in the GitHub repo for anyone who needs them.
 Compatible with the 8 October game patch, build 25801363, which moved two of the addresses UE4SS uses to find the engine. Replacement signature files are in the repo under Signatures/.
 

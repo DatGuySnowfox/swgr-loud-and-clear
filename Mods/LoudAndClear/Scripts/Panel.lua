@@ -54,7 +54,7 @@ local function decibels(multiplier)
     return string.format("%+.1f dB", 20 * math.log(multiplier, 10))
 end
 
-function Panel.create(controller, model, order)
+function Panel.create(controller, model, order, focusable)
     -- Why the host is built this way rather than borrowed.
     --
     -- The first version created one of the game's own widget blueprints,
@@ -210,11 +210,20 @@ function Panel.create(controller, model, order)
     button("close", "Close", mode_row)
     add(mode_row, 32, 4)
 
-    add(label("Arrow keys move, Enter activates.", 12, MUTED), 17, 1)
+    add(label("Drag a slider, or click a button. HOME closes.", 12, MUTED), 17, 1)
     add(label("Saved values load automatically next launch.", 12, MUTED), 17, 0)
 
     slot:SetSize({ X = self.width, Y = self.height })
-    self.widget.bIsFocusable = true
+
+    -- Focusable only when we actually take input, never otherwise.
+    --
+    -- This was unconditionally true, and closing the panel only collapses it
+    -- rather than removing it, so a focusable widget sat in the viewport at
+    -- Z 9000 for the rest of the session. Slate drives gamepad navigation by
+    -- focus, so once focus had landed here the controller had nowhere to send
+    -- input, with no panel on screen to explain it. Mouse and keyboard were
+    -- unaffected, which is why it read as random.
+    self.widget.bIsFocusable = focusable and true or false
     self.widget:AddToViewport(9000)
 
     return setmetatable(self, { __index = Panel })

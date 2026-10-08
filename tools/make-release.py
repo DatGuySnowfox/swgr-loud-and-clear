@@ -101,11 +101,13 @@ Press HOME in game for the mix panel: nine sliders, voice level and each
 competing channel, with a dB readout on every one. Changes apply as you drag,
 so you hear them while you listen. Save keeps them for next launch.
 
-Arrow keys move between buttons and Enter activates. The mouse does not drive
-the panel by default, because taking input focus while the game is also driving
-it is worth avoiding. If you want the cursor, set this in CONFIG:
+Drag the sliders with the mouse and click the buttons. The panel takes the
+cursor while it is open and hands it back when you close it.
 
-    panel_grabs_input = true,
+For a read-only panel that never touches input focus, set this in CONFIG and
+change values with the console commands instead:
+
+    panel_grabs_input = false,
 
 You can also edit the CONFIG block at the top of Scripts\\main.lua directly:
 

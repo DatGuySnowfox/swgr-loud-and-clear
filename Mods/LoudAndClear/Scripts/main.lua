@@ -114,19 +114,23 @@ local CONFIG = {
 
     -- Whether the panel takes exclusive UI input and shows the cursor.
     --
-    -- With it true, open calls SetInputMode_UIOnlyEx and close calls
-    -- SetInputMode_GameOnly, and the mouse drives the sliders. Arrow keys and
-    -- Enter work either way.
+    -- TRUE BY DEFAULT, because the sliders need a cursor. Slider values are read
+    -- by polling GetValue and nothing moves a slider from the keyboard, so
+    -- without this the nine sliders cannot be touched and the panel is five
+    -- working buttons around decoration. It shipped that way by accident after
+    -- being turned off while chasing the cutscene crash.
     --
-    -- FALSE BY DEFAULT, but not because this was the bug. It was tested as the
-    -- sixth hypothesis for the cutscene crash and cleared: the crash recurred
-    -- with these calls removed entirely. The dump later put the fault in the
-    -- Blueprint VM, which is a different layer again.
+    -- It was tested as the sixth hypothesis for that crash and cleared: the
+    -- crash recurred with these calls removed entirely, and the dump later put
+    -- the fault in the Blueprint VM, a different layer again.
     --
-    -- It stays off because moving Slate's focus while a cutscene is also driving
-    -- it is worth avoiding on its own merits, and because the panel is already
-    -- on probation. Turning it on is reasonable once the probation ends.
-    panel_grabs_input = false,
+    -- This also decides whether the panel widget is focusable at all. It must
+    -- not be when we are not taking input, or Slate can leave gamepad focus on a
+    -- closed panel. See the note in Panel.create.
+    --
+    -- Set false for a read-only panel that never touches input focus. Values
+    -- then change through the console commands instead.
+    panel_grabs_input = true,
 
     -- Whether the panel refuses to open during a cutscene, and closes itself if
     -- one starts while it is open.
@@ -1014,7 +1018,11 @@ local function open_panel()
 
     snapshot(model)
     snapshot(saved)
-    model.selection = 1
+    -- Nothing pre-selected. Selection used to be driven by the arrow keys and
+    -- starting at 1 highlighted Save before the mouse had touched anything.
+    -- With the cursor doing the work, hover is the only highlight that means
+    -- something, and a click sets this to whatever was clicked.
+    model.selection = 0
     model.bypassed = not applied
 
     -- Said once per cutscene, not once per keypress. The first version reported
@@ -1046,7 +1054,7 @@ local function open_panel()
     else
         vlog("panel: building widgets")
         local created, err = pcall(function()
-            return Panel.create(pc, model, CONFIG.duck_order)
+            return Panel.create(pc, model, CONFIG.duck_order, CONFIG.panel_grabs_input)
         end)
         if not created then
             log("could not open the panel: %s", tostring(err))
@@ -1174,13 +1182,17 @@ if Panel then
         queue("toggle")
         start_panel_loop()
     end)
-    for key, event in pairs({
-        [Key.UP_ARROW] = "previous", [Key.LEFT_ARROW] = "previous",
-        [Key.DOWN_ARROW] = "next",   [Key.RIGHT_ARROW] = "next",
-        [Key.RETURN] = "activate",   [Key.LEFT_MOUSE_BUTTON] = "click",
-    }) do
-        RegisterKeyBind(key, function() queue(event) end)
-    end
+    -- Left click only, and nothing else.
+    --
+    -- This used to bind the arrow keys and Enter as well, for keyboard
+    -- navigation of the buttons. A UE4SS keybind cannot be unregistered, so
+    -- those were permanent hooks on four gameplay keys and Enter, live whether
+    -- the panel was open or not, driving a panel that the cursor handles anyway.
+    --
+    -- Left click stays because nothing binds UButton::OnClicked, so a click has
+    -- to be noticed here and matched against whichever button is hovered.
+    -- queue() drops it immediately when no panel is open.
+    RegisterKeyBind(Key.LEFT_MOUSE_BUTTON, function() queue("click") end)
 
     -- Widgets do not survive a level change, and work already queued against the
     -- old world must not run against the new one. The epoch ticket discards it.
