@@ -85,21 +85,19 @@ local CONFIG = {
     -- uses, so both can be installed together.
     panel_key = Key.HOME,
 
-    -- OFF BY DEFAULT, on evidence rather than caution.
+    -- Set false if you hit the freeze described in the README's known issues.
     --
-    -- The audio side ran for a day without a single hang. The panel is hours old
-    -- and has been present for three, two of them seconds after a clean close.
-    -- A 6.8 GB hang dump taken during one shows the game's main thread blocked
-    -- and 34 of 154 threads carrying UE4SS frames, 32 of them parked in one
-    -- identical wait. That does not prove the panel is the cause, since idle
-    -- worker threads look the same, but the correlation is the only one there is.
+    -- The game can hang while the panel is in use, and twice it has hung seconds
+    -- after the panel was cleanly closed. Three occurrences so far, intermittent,
+    -- cause not established. A 6.8 GB hang dump shows the game's main thread
+    -- blocked and 34 of 154 threads carrying UE4SS frames, 32 parked in one
+    -- identical wait, which is suggestive but not proof: idle worker threads look
+    -- the same.
     --
-    -- Turning it off also removes the 10 Hz LoopAsync behind it, which is the
-    -- mod's largest source of cross-thread traffic: with this false, only the
-    -- 1 Hz verify loop remains.
-    --
-    -- Set true to use the panel. The mix itself is unaffected either way.
-    panel_enabled = false,
+    -- False also removes the 10 Hz LoopAsync behind the panel, leaving only the
+    -- 1 Hz verify loop. The mix is unaffected either way, and the mix on its own
+    -- has run for a day without a hang.
+    panel_enabled = true,
 
     -- Whether the panel takes exclusive UI input and shows the cursor.
     --

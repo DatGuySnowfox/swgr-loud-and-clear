@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.5 — 2026-10-08
+
+### Known issue
+
+- **The panel can hang the game**, including a few seconds after a clean close.
+  Three occurrences, intermittent, cause not established. Tracked as
+  [issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1).
+
+  Workaround: `panel_enabled = false` in `CONFIG`, which also removes the 10 Hz
+  loop behind the panel. The mix is unaffected and has run for a day without a
+  hang.
+
+  A 6.8 GB hang dump shows the main thread blocked and 34 of 154 threads
+  carrying UE4SS frames, 32 parked in one identical wait. Suggestive, not proof,
+  since idle workers look the same. The capture was of a stall the game recovered
+  from, not the fatal hang.
+
+### Fixed
+
+- The cinematic guard added in 1.1.4 never worked. `pc.bCinematicMode` returns
+  `TrivialObject: ...` rather than a boolean, because UE4SS does not map bitfield
+  bools through plain indexing, so the comparison was never true and the panel
+  opened during cutscenes regardless. Logging the value is what caught it.
+
+- `tools/toggle-mod.ps1` only touched `mods.txt`, so toggling off did nothing:
+  `enabled.txt` in the mod folder loads a mod on its own, and `mods.json` carries
+  its own flag. It now handles all three and reports each with a verdict. This
+  had already invalidated one A/B test.
+
 ## 1.1.3 — 2026-10-08
 
 ### Fixed

@@ -24,6 +24,20 @@ It only touches volume. No gameplay, saves, visuals or files inside the game are
 
 [b]I still can't guarantee fixes if a future update breaks this.[/b] UE4SS finds the engine by scanning for byte patterns, and a patch can move them. That is exactly why it's open source: the repo includes the tools to check whether an update broke anything before you launch, the reasoning behind every value, and notes on the game's audio layout so anyone can pick it up and fix it without starting from scratch.
 
+[size=4][b]Known issue: the panel can hang the game[/b][/size]
+
+[b]The game can freeze while the mix panel is in use, and twice it has frozen a few seconds after the panel was closed.[/b] Three occurrences so far, intermittent, and the cause is not yet established.
+
+The audio side on its own has run for a day without a hang, so if you hit this, open [font=Courier New]Scripts\main.lua[/font] and set:
+
+[code]panel_enabled = false,[/code]
+
+That removes the panel and the timer behind it. Your mix is completely unaffected: everything still applies on launch, and the console commands still work for tuning.
+
+A hang dump has been captured and analysed. It shows the game's main thread blocked with 32 threads parked in one identical wait, which is suggestive but not conclusive, since idle worker threads look the same. Investigation is ongoing and tracked on GitHub.
+
+If you hit it and want to help, a dump is genuinely useful. Run [font=Courier New]procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:	emp\dumps[/font] before launching and attach whatever it captures to the GitHub issue.
+
 [size=4][b]Requirements[/b][/size]
 
 [list]

@@ -87,24 +87,44 @@ lifts Bypass, since touching a slider means you want to hear your own mix again.
 Engines below about 0.50 costs the racing noticeable weight, which is a real
 trade rather than a free win.
 
-#### If the panel misbehaves
+#### Known issue: the panel can hang the game
 
-Closing it froze the game once, with the panel opened during a cutscene. The
-cause is not established, so there are two switches in `CONFIG`:
+**The game can freeze while the panel is in use, and twice it has frozen a few
+seconds after the panel was cleanly closed.** Three occurrences, intermittent,
+cause not established.
+
+Workaround, in `CONFIG` at the top of `main.lua`:
 
 ```lua
-panel_grabs_input = true,   -- false: keyboard only, no cursor, no input-mode calls
-panel_enabled     = true,   -- false: no panel at all, audio side unaffected
+panel_enabled = false,      -- no panel; the mix is unaffected
+panel_grabs_input = false,  -- keep the panel, drop the input-mode calls
 ```
 
-`panel_grabs_input = false` is the one to try first. It removes the
-`SetInputMode_UIOnlyEx` and `SetInputMode_GameOnly` calls entirely, which is the
-leading suspect, and leaves the panel working on arrow keys and Enter. You lose
-mouse control of the sliders.
+`panel_enabled = false` also removes the 10 Hz loop behind the panel, leaving
+only the 1 Hz verify loop. The audio side on its own has run for a day without a
+hang, so losing the panel costs you nothing but the UI.
 
-Until this is understood, **open the panel in a menu or paused rather than during
-a cutscene**. Closing now logs each step, so if it happens again the log names
-the step it stopped on.
+What is known:
+
+- A 6.8 GB hang dump shows the game's main thread blocked and **34 of 154 threads
+  carrying UE4SS frames, 32 of them parked in one identical wait**. Suggestive,
+  but not proof: idle worker threads look identical in a dump.
+- Two of the three hangs followed a clean close by seconds, with every close step
+  logged as completing. So closing is not where it dies.
+- `[FCallbackGarbageCollector] Freed invalid callbacks!` appears shortly before
+  several of them. That is UE4SS discarding callbacks whose objects were
+  collected, which points at object lifetime rather than at the close path.
+- The main thread's stack includes `gameoverlayrenderer64.dll`, the Steam
+  overlay. Overlay plus injected DLL is a known conflict class and has not been
+  ruled out.
+- Ruled out and fixed anyway: a nested `ExecuteInGameThread`, and removing the
+  focused widget before releasing UI input.
+
+Tracked at
+[issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If you
+hit it, a hang dump would genuinely help: run
+`procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:	emp\dumps` before
+launching and attach what it captures.
 
 #### Where settings go
 
