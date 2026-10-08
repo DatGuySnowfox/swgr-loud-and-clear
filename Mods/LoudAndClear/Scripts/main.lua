@@ -85,24 +85,32 @@ local CONFIG = {
     -- uses, so both can be installed together.
     panel_key = Key.HOME,
 
-    -- OFF BY DEFAULT. The panel is not safe during cutscenes.
+    -- ON, but on probation. Read this before trusting it in a long session.
     --
-    -- Six hypotheses have been implemented and tested, and the crash survived
-    -- every one: a nested ExecuteInGameThread, close ordering, per-toggle widget
-    -- teardown, repaint call volume, a template conflict with another mod, and
-    -- the input-mode calls. It has now crashed on open as well as on close, and
-    -- with the input grab disabled entirely.
+    -- The panel froze the game during cutscenes, on open and on close. A dump
+    -- taken at a freeze put the main thread in UObject::ProcessContextOpcode,
+    -- the engine's handler for the blueprint Context opcode, with RSP below its
+    -- own stack base: a stack overflow from unbounded recursion inside the
+    -- Blueprint VM.
     --
-    -- What is known: a dump of the hung process showed the game's main thread
-    -- with RSP below its own stack base, which is a stack overflow from
-    -- unbounded recursion. The recursion has not been identified, because the
-    -- overflowed stack pages are not committed and there are no frames to walk.
+    -- Six hypotheses were implemented and tested before that dump was resolved,
+    -- and every one of them was about a native code path: a nested
+    -- ExecuteInGameThread, close ordering, per-toggle widget teardown, repaint
+    -- call volume, a template conflict with another mod, and the input-mode
+    -- calls. They all failed because they were all in the wrong layer.
     --
-    -- The mix itself has never been implicated. It has run for days without a
-    -- hang. Only the panel has, and only in cutscenes.
+    -- The fix is in Panel.lua: the panel used to borrow one of the game's own
+    -- widget blueprints to get a WidgetTree, which left a live blueprint
+    -- instance ticking on screen. It now builds a bare /Script/UMG.UserWidget
+    -- and its tree by hand, and touches no blueprint at all.
     --
-    -- Set true to use it, and do not open it during a cutscene.
-    panel_enabled = false,
+    -- Belt and braces, since the fix is reasoned rather than reproduced: the
+    -- panel also refuses to open during a cutscene and closes itself if one
+    -- starts. lac_cutscene reports whether that detection works here.
+    --
+    -- The mix itself has never been implicated and runs for days untouched.
+    -- Set false if you want it gone entirely, panel and timer both.
+    panel_enabled = true,
 
     -- Whether the panel takes exclusive UI input and shows the cursor.
     --
@@ -910,6 +918,50 @@ local function close_panel()
     log("panel closed")
 end
 
+-- Is a cutscene running right now?
+--
+-- Every freeze this mod has caused happened during one, so the panel stays shut
+-- then even now that the blueprint host behind it is gone. Belt and braces: the
+-- host was the identified cause, this is the containment if it turns out not to
+-- have been the only one.
+--
+-- APlayerController::bCinematicMode was the first attempt and is useless from
+-- Lua. UE4SS does not map engine bitfield bools, so reading it yields a
+-- TrivialObject rather than true or false, and the old guard silently never
+-- fired. UMovieSceneSequencePlayer::IsPlaying is a plain BlueprintPure bool and
+-- reads back cleanly.
+--
+-- Best effort. If this game drives some cinematics without a sequence player,
+-- this returns false and the panel opens anyway. lac_cutscene prints what it can
+-- see, so run it during a cutscene to find out rather than assuming.
+local SEQUENCE_CLASSES = { "LevelSequencePlayer", "MovieSceneSequencePlayer" }
+
+local function cutscene(report)
+    local playing, seen = false, 0
+    for _, name in ipairs(SEQUENCE_CLASSES) do
+        pcall(function()
+            local found = FindAllOf(name)
+            if not found then return end
+            for _, player in ipairs(found) do
+                if valid(player) then
+                    seen = seen + 1
+                    local ok, active = pcall(function() return player:IsPlaying() end)
+                    if ok and active == true then
+                        playing = true
+                        if report then
+                            report("  playing: %s", player:GetFullName())
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    if report then
+        report("  %d sequence player(s) visible, playing = %s", seen, tostring(playing))
+    end
+    return playing, seen
+end
+
 local function open_panel()
     if not Panel then return false end
     local pc
@@ -921,26 +973,13 @@ local function open_panel()
     model.selection = 1
     model.bypassed = not applied
 
-    -- Refuse to open during a cutscene.
-    --
-    -- Closing froze the game once, opened mid-cutscene, and taking exclusive UI
-    -- input while a cinematic is also driving focus is the leading suspect.
-    -- APlayerController::bCinematicMode is the engine's own flag for that state.
-    --
-    -- Best effort, not a guarantee: a game can run cinematics without setting
-    -- it. The value is logged either way, so if a freeze recurs with this
-    -- reporting false, the flag is not the right signal here and the log says so
-    -- rather than leaving it to be guessed at.
-    local cinematic
-    pcall(function() cinematic = pc.bCinematicMode end)
-    vlog("panel: bCinematicMode = %s", tostring(cinematic))
+    local playing, seen = cutscene(vlog)
+    vlog("panel: cutscene = %s (%d sequence players)", tostring(playing), seen)
 
-    if cinematic == true then
-        log("not opening during a cutscene. Press %s again once it ends.",
-            "HOME")
-        log("  Closing the panel mid-cutscene froze the game once, so this is")
-        log("  blocked until it is understood. panel_grabs_input = false in")
-        log("  CONFIG removes the mechanism and lifts this restriction.")
+    if playing then
+        log("not opening during a cutscene. Press HOME again once it ends.")
+        log("  Every freeze this mod has caused happened in one, so the panel")
+        log("  stays shut until it ends. Run lac_cutscene if this looks wrong.")
         return false
     end
 
@@ -1148,6 +1187,15 @@ panel_tick = function()
                     tick = tick + 1
                     if tick % 10 == 1 then panel:resize(panel_owner) end
 
+                    -- A cutscene can start while the panel is already open, so
+                    -- refusing to open during one is not enough on its own. Once
+                    -- a second, because this walks the object array and the
+                    -- panel is the thing being kept cheap.
+                    if tick % 10 == 5 and cutscene() then
+                        log("cutscene started, closing the panel")
+                        close_panel(); panel_events = {}; return
+                    end
+
                     -- Repaint only when something visible changed, plus a slow
                     -- poll so hover highlighting still responds.
                     local dirty = is_dirty()
@@ -1201,6 +1249,19 @@ RegisterConsoleCommandHandler("lac_set", function(_, parameters)
         return true
     end
     ExecuteInGameThread(function() set_bus_multiplier(relpath, multiplier) end)
+    return true
+end)
+
+-- Run this during a cutscene. If it reports playing = false while one is
+-- obviously on screen, the panel's cutscene guard cannot see this game's
+-- cinematics and that needs knowing before trusting it.
+RegisterConsoleCommandHandler("lac_cutscene", function()
+    log("cutscene check:")
+    local playing, seen = cutscene(log)
+    if seen == 0 then
+        log("  no sequence players exist at all, so the guard is inert here")
+    end
+    log("  the panel would %s", playing and "refuse to open" or "open")
     return true
 end)
 

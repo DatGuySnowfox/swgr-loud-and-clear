@@ -87,31 +87,22 @@ lifts Bypass, since touching a slider means you want to hear your own mix again.
 Engines below about 0.50 costs the racing noticeable weight, which is a real
 trade rather than a free win.
 
-#### Known issue: the panel can hang the game
+#### Known issue: the panel could hang the game, and the fix is on probation
 
-**The panel is off by default.** It has frozen the game during cutscenes, on
-close and also on open, and the cause is now pinned down far enough to say the
-panel needs rebuilding rather than patching.
+**The panel froze the game during cutscenes**, on close and also on open,
+intermittently. The cause is identified and a fix is in, but the fix is reasoned
+from a dump rather than proven by reproducing and then not reproducing a rare,
+intermittent crash. Treat it as on probation.
 
-To try it anyway, in `CONFIG` at the top of `main.lua`:
-
-```lua
-panel_enabled = true,
-```
-
-The mix is unaffected either way. It applies on launch, the console commands
-still work, and the audio side alone has run for days without a hang.
-
-**What the crash actually is.** A full-memory dump taken live at the freeze
-shows the game's main thread with `RSP` at `0x400C90`, below its own stack base
-of `0x401000`. That is a stack overflow, so the thread was recursing with no
-stop condition. It was never a deadlock. `RIP` was
+**What the crash was.** A full-memory dump taken live at the freeze shows the
+game's main thread with `RSP` at `0x400C90`, below its own stack base of
+`0x401000`. That is a stack overflow, so the thread was recursing with no stop
+condition. It was never a deadlock. `RIP` was
 `SWGR-Win64-Shipping.exe+0x15FD1`, inside the function beginning at `+0x15F92`.
 
 That function is `UObject::ProcessContextOpcode`, the engine's handler for the
-Blueprint `Context` opcode, which is what runs when a Blueprint node
-dereferences its target pin. Read out of the shipping binary rather than
-guessed at:
+Blueprint `Context` opcode, which is what runs when a Blueprint node dereferences
+its target pin. Read out of the shipping binary rather than guessed at:
 
 - It takes `(UObject*, FFrame&, void*, bool)` and clears `FFrame+0x30`,
   `MostRecentProperty`, as its first act.
@@ -127,11 +118,12 @@ guessed at:
   engine has: `execContext` and `execContextFailSilent`.
 
 Its prologue reserves `0x5D8` bytes, so a few hundred nested Blueprint calls are
-enough to run the stack out.
+enough to run the stack out. Reproduce the lookup with
+`python tools/resolve-address.py <exe> 140015FD1`.
 
-**What that rules out.** The recursion is Blueprint bytecode. It is not Slate
+**What that ruled out.** The recursion is Blueprint bytecode. It is not Slate
 layout, not input routing, and not Lua. Six hypotheses were implemented and
-tested before this, and each one was about a native path:
+tested before the dump was resolved, and each one was about a native path:
 
 | Hypothesis | Result |
 | --- | --- |
@@ -141,23 +133,53 @@ tested before this, and each one was about a native path:
 | Repaint call volume | Cut from 560/s to 230/s, crash recurred |
 | Template conflict with another mod | That mod was not installed |
 | Input mode and cursor calls | Removed entirely, crash recurred |
+| Steam overlay interaction | Does not produce recursion through `GNatives` |
 
 They failed because they were all looking in the wrong layer.
 
-**What is left to test.** The panel's only contact with Blueprint code is its
-host. `Panel.lua` constructs one of the game's own widget blueprints,
-`WBP_SectionSubLabel_C`, purely to get a usable `WidgetTree`, then replaces
-`WidgetTree.RootWidget` with a canvas of its own. That leaves a live instance of
-a game Blueprint class whose graph still runs against a tree it no longer
-recognises. Removing that contact surface, by hosting on a tree built only from
-engine classes with no Blueprint class involved, is the next build.
+**The fix.** The panel's only contact with Blueprint code was its host. It used
+to construct one of the game's own widget blueprints, `WBP_SectionSubLabel_C`,
+purely because a Blueprint widget comes with a usable `WidgetTree`, then replaced
+that tree's `RootWidget` with a canvas of its own. The cost was a live instance
+of a game Blueprint class on screen, running its `PreConstruct`, `Construct` and
+per-frame `Tick` against a tree it no longer recognised.
+
+`Panel.lua` now builds a bare `/Script/UMG.UserWidget` and constructs its
+`WidgetTree` by hand. Every widget in the panel comes from `/Script/UMG`, and
+nothing in the file references `/Game` at all.
+
+**And a second line of defence**, because one reasoned fix for an intermittent
+crash is not the same as a proven one. The panel refuses to open while a cutscene
+is playing, and closes itself if one starts while it is open. Detection is
+`UMovieSceneSequencePlayer::IsPlaying` across every live sequence player.
+`APlayerController::bCinematicMode` was tried first and is useless here: UE4SS
+does not map engine bitfield bools, so reading it returns a `TrivialObject`
+rather than `true` or `false`, and the original guard silently never fired.
+
+That detection is a guess about how this game drives its cinematics, so verify
+it rather than trusting it. During a cutscene, open the console and run:
+
+```
+lac_cutscene
+```
+
+It prints how many sequence players it can see and whether it considers one to be
+playing. If it says `playing = false` while a cutscene is plainly on screen, the
+guard is inert here and only the host rebuild is protecting you.
 
 Tracked at
-[issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If you
-hit it, a dump still helps, and there is now something specific to look for in
-one. Run
+[issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If it
+recurs, a dump still helps, and there is now something specific to look for in
+one: the committed part of the stack should be dense with repeated `FFrame`
+structures, and `FFrame::Node` on each names the Blueprint function that is
+recursing. Run
 `procdump64.exe -h -e -ma -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps` before
 launching and attach what it captures.
+
+To remove the panel and the 10 Hz timer behind it entirely, set
+`panel_enabled = false` in `CONFIG` at the top of `main.lua`. The mix is
+unaffected either way: it applies on launch, the console commands still work, and
+the audio side alone has run for days without a hang.
 
 #### Where settings go
 

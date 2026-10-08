@@ -1,9 +1,11 @@
 --[[
     In-game mix panel, built as native UMG widgets at runtime.
 
-    No ImGui and no C++. A host widget is created from one of the game's own
-    blueprints, which gives a usable WidgetTree, then the tree is populated with
-    StaticConstructObject on engine UMG classes.
+    No ImGui, no C++, and deliberately no blueprint. The host is a bare
+    /Script/UMG.UserWidget with a WidgetTree constructed by hand, and every
+    widget in it comes from /Script/UMG. Nothing here loads or instantiates a
+    class from /Game, which is what the first version did and what took the game
+    down. See the note on Panel.create.
 
     Sliders apply live, so a change is audible while dragging rather than after
     pressing something. That is the whole point of having a panel here: mix
@@ -53,21 +55,48 @@ local function decibels(multiplier)
 end
 
 function Panel.create(controller, model, order)
-    local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-    assert(library and library:IsValid(), "WidgetBlueprintLibrary unavailable")
-
-    -- Any of the game's widget blueprints works as a host. This one is small and
-    -- always cooked; its own contents are replaced by our tree.
-    local template = StaticFindObject(
-        "/Game/Griffin/UI/Widgets/Global/WBP_SectionSubLabel.WBP_SectionSubLabel_C")
-    assert(template and template:IsValid(), "Load into gameplay before opening the panel")
+    -- Why the host is built this way rather than borrowed.
+    --
+    -- The first version created one of the game's own widget blueprints,
+    -- WBP_SectionSubLabel_C, purely because a blueprint widget comes with a
+    -- usable WidgetTree, and then replaced that tree's RootWidget. The cost was
+    -- a live instance of a game blueprint class sitting on screen, running its
+    -- PreConstruct, Construct and per-frame Tick against a tree it no longer
+    -- recognised.
+    --
+    -- A full-memory dump taken at one of the freezes put the main thread in
+    -- UObject::ProcessContextOpcode, the engine's handler for the blueprint
+    -- Context opcode, with RSP below its own stack base: a stack overflow from
+    -- unbounded recursion inside the Blueprint VM. That borrowed host was the
+    -- mod's only contact with blueprint code, so it is gone.
+    --
+    -- Everything below comes from /Script/UMG. Nothing touches /Game.
+    local user_widget_class = StaticFindObject("/Script/UMG.UserWidget")
+    assert(user_widget_class and user_widget_class:IsValid(),
+        "UMG.UserWidget unavailable")
+    local widget_tree_class = StaticFindObject("/Script/UMG.WidgetTree")
+    assert(widget_tree_class and widget_tree_class:IsValid(),
+        "UMG.WidgetTree unavailable")
 
     local self = { sliders = {}, values = {}, buttons = {}, width = 470, height = 40 }
 
-    self.widget = library:Create(controller, template, controller)
-    assert(self.widget and self.widget:IsValid(), "Could not create the panel widget")
-    local tree = self.widget.WidgetTree
-    assert(tree and tree:IsValid(), "Widget tree unavailable")
+    -- Outered to the controller so UUserWidget::GetWorld resolves through it.
+    -- A widget built this way never runs Initialize(), which is the thing that
+    -- would normally clone a tree from the generated class, so the tree is
+    -- supplied directly instead.
+    self.widget = StaticConstructObject(user_widget_class, controller)
+    assert(self.widget and self.widget:IsValid(),
+        "Could not construct the host widget")
+
+    local tree = StaticConstructObject(widget_tree_class, self.widget)
+    assert(tree and tree:IsValid(), "Could not construct the widget tree")
+    self.widget.WidgetTree = tree
+
+    -- Sets Player, which AddToViewport needs to find a screen to attach to.
+    local owned = pcall(function() self.widget:SetOwningPlayer(controller) end)
+    if not owned then
+        pcall(function() self.widget.Player = controller.Player end)
+    end
 
     local function make(kind)
         local class = StaticFindObject("/Script/UMG." .. kind)

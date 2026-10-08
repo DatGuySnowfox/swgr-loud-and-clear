@@ -1,5 +1,88 @@
 # Changelog
 
+## 1.3.0 — 2026-10-08
+
+### Fixed
+
+- **The panel hang is identified and the cause is removed.** A full-memory dump
+  taken live at a freeze put the game's main thread at `RSP 0x400C90`, below its
+  own stack base of `0x401000`. That is a stack overflow from unbounded
+  recursion, not a deadlock. `RIP` resolved to `UObject::ProcessContextOpcode`,
+  the engine's handler for the Blueprint `Context` opcode, so the recursion was
+  Blueprint bytecode.
+
+  The panel's only contact with Blueprint code was its host. It constructed one
+  of the game's own widget blueprints, `WBP_SectionSubLabel_C`, purely to get a
+  usable `WidgetTree`, then replaced that tree's `RootWidget`. That left a live
+  instance of a game Blueprint class on screen running its `PreConstruct`,
+  `Construct` and per-frame `Tick` against a tree it no longer recognised.
+
+  `Panel.lua` now builds a bare `/Script/UMG.UserWidget` and constructs its
+  `WidgetTree` by hand. Nothing in the file references `/Game`.
+
+  This is reasoned from the dump, not demonstrated by reproducing the crash and
+  then failing to reproduce it, because it is rare and intermittent. The panel is
+  back on by default but on probation.
+
+- **The cutscene guard works now.** The 1.1.4 guard read
+  `APlayerController::bCinematicMode`, which UE4SS cannot map because it is an
+  engine bitfield bool, so it returned a `TrivialObject` and the comparison was
+  never true. It now checks `UMovieSceneSequencePlayer::IsPlaying` across every
+  live sequence player, which is a plain `BlueprintPure` bool. The panel refuses
+  to open during a cutscene and closes itself if one starts while it is open.
+
+### Added
+
+- `lac_cutscene` reports how many sequence players are live and whether any is
+  playing. Run it during a cutscene to confirm the guard can actually see this
+  game's cinematics, rather than assuming it can.
+
+- `tools/resolve-address.py` resolves an address in the shipping executable to
+  its enclosing function and disassembles it, reading the PE exception directory
+  rather than disassembling the whole image. The exe is about 490 MB with roughly
+  430 MB marked executable, so a full IDA auto-analysis pass takes hours to
+  answer a one-address question; this takes a second. It also reports the
+  prologue's stack reservation, which is what turned a stack overflow into a
+  frame count.
+
+## 1.2.0 — 2026-10-08
+
+### Changed
+
+- **The panel ships disabled.** It had crashed on open as well as on close, and
+  with the input grab removed entirely, so there was no configuration left to
+  recommend. The mix is unaffected and had run for days without a hang.
+
+### Fixed
+
+- Removed the input-mode and cursor calls behind `panel_grabs_input`, testing
+  whether taking exclusive UI input was the trigger. It was not: the crash
+  recurred with them gone.
+
+## 1.1.8 — 2026-10-08
+
+### Fixed
+
+- **The panel repaints only when something visible changed.** It had been
+  rebuilding every row ten times a second, roughly forty-five reflected
+  UFunction calls per tick through UE4SS's hook, for a panel that mostly sits
+  still. Call volume dropped from about 560 a second to about 230. The crash
+  recurred, so call volume was not the cause, but the cost was not worth paying
+  either way.
+
+## 1.1.7 — 2026-10-08
+
+### Fixed
+
+- **The panel is built once and hidden on close**, rather than torn down and
+  rebuilt on every toggle. Constructing and destroying forty-odd widgets per
+  toggle was the largest object-lifetime churn the mod produced, and
+  `RemoveFromParent` now happens only on a level change. The crash recurred.
+
+- **The 10 Hz panel loop runs only while the panel is open.** It previously ran
+  from startup for the whole session. Idle cost is now the 1 Hz verify loop
+  alone.
+
 ## 1.1.5 — 2026-10-08
 
 ### Known issue
