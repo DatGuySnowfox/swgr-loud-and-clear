@@ -1,0 +1,17 @@
+1.2.0
+
+Fixed: the mix panel could freeze the game during a cutscene. It borrowed one of the game's own widget blueprints to get a widget tree, which left a live blueprint instance running its graph every frame against a tree it no longer recognised. It now builds its own widget from engine classes only.
+Added: the panel refuses to open while a cutscene is playing, and closes itself if one starts. Set cutscene_guard = false in CONFIG to turn that off.
+New: an in-game mix panel on HOME. Nine sliders, voice level and the seven channels competing with it, each with a live dB readout, all applied as you drag.
+New: Save, Undo, Mod defaults, and a Bypass toggle for comparing against the game's own mix.
+New: panel settings are saved and reloaded on the next launch, so tuning no longer means editing the Lua by hand.
+Added: Ctrl+F10 and lac_cutscene report whether a cutscene is currently detected.
+Fixed: dialogue could end up louder than you asked for, because a reload could read the mod's own boosted output back as the game's original level and boost it again.
+Fixed: the mod no longer scans the whole audio graph on every launch, which was several hundred object lookups for information that is now written down.
+Changed: the panel is driven by arrow keys and Enter rather than the mouse. Set panel_grabs_input = true in CONFIG if you want the cursor.
+Changed: the download no longer bundles the UE4SS signature files. They are UE4SS configuration rather than mod files, and shipping them invited overwriting a working setup. They are in the GitHub repo for anyone who needs them.
+Compatible with the 8 October game patch, build 25801363, which moved two of the addresses UE4SS uses to find the engine. Replacement signature files are in the repo under Signatures/.
+
+1.0.0
+
+Initial release. Boosts the dialogue sound classes to 1.7x and ducks music, crowds, airflow, engines and ambience by 1.9 to 4.4 dB.
