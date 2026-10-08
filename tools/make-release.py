@@ -65,7 +65,14 @@ are the game's own again next launch. Nothing else is touched.
 
 TUNING
 ------
-Open Scripts\\main.lua and edit the CONFIG block at the top.
+Press HOME in game for the mix panel: nine sliders, voice level and each
+competing channel, with a dB readout on every one. Changes apply as you drag,
+so you hear them while you listen. Save keeps them for next launch.
+
+Arrow keys move between buttons, Enter activates, or use the mouse. The panel
+takes input focus while open, so open it paused rather than mid-race.
+
+You can also edit the CONFIG block at the top of Scripts\\main.lua and edit the CONFIG block at the top.
 
   class_boost   how much louder dialogue gets. 1.0 is untouched, 2.0 is twice
                 as loud. Default 1.7.

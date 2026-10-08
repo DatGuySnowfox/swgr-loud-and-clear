@@ -39,10 +39,35 @@ Nothing to press for the normal behaviour.
 
 | Key | Action |
 | --- | --- |
+| **HOME** | **Open or close the mix panel** |
 | Ctrl+F7 | Re-apply now |
 | Ctrl+F8 | Dump the audio graph to `UE4SS.log` |
 | Ctrl+F9 | Restore the game's own levels |
 | Ctrl+R | Reload the mod after editing `main.lua` |
+
+### The panel
+
+`HOME` opens nine live sliders: voice level and the seven duck channels, each
+with a dB readout, plus Save, Revert, Defaults and Close. Arrow keys move between
+buttons, Enter activates, or use the mouse.
+
+**Everything applies as you drag.** That is the only reason a panel beats the
+console here: mix values are judged by ear, and a console round trip breaks that
+loop. Only the sliders that moved are re-applied, so dragging does not push all
+nine values at the engine ten times a second.
+
+Save writes to
+`%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\LoudAndClear-settings.txt`, which
+loads over the `CONFIG` defaults on the next launch. That file is deliberately
+separate from `baseline.txt`: one records what you chose, the other what the game
+authored, and conflating them is how an earlier compounding bug got its chance.
+
+While the panel is open it takes UI input focus and shows the cursor, restoring
+your previous cursor state on close, so the game will not take driving input.
+Open it paused or in a menu rather than mid-race.
+
+`panel_key` in `CONFIG` changes the binding. It defaults to `Key.HOME` rather
+than `Key.INS` so it coexists with the Galactic FOV Panel mod.
 
 Console commands, with the console enabled via `ConsoleEnabled = 1` in
 `UE4SS-settings.ini`:

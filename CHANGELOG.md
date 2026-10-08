@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.1.0 — 2026-10-08
+
+### Added
+
+- **An in-game mix panel, on `HOME`.** Nine live sliders, voice level and the
+  seven duck channels, each with a dB readout, plus Save, Revert, Defaults and
+  Close. Mouse or arrow keys and Enter.
+
+  Everything applies as you drag. That is the point: mix values are judged by
+  ear, and a console round trip breaks that loop. Only sliders that actually
+  moved are re-applied, so dragging does not push all nine values at the engine
+  ten times a second.
+
+  It is native UMG built at runtime from Lua, not ImGui and not C++. A host
+  widget is created from one of the game's own blueprints to get a usable
+  `WidgetTree`, which is then populated with `StaticConstructObject` on engine
+  UMG classes. The technique is borrowed from the Galactic FOV Panel mod, which
+  proved it works in this game.
+
+- **Saved settings.** The panel writes to its own settings file, layered over
+  the `CONFIG` defaults at startup, so tuning survives a restart without editing
+  Lua. Kept separate from `baseline.txt` on purpose: one records what you chose,
+  the other what the game authored.
+
+- **Level-transition handling**, which the mod never had.
+  `RegisterLoadMapPreHook` closes the panel and bumps an epoch that in-flight
+  work checks before touching anything, because widgets do not survive a map
+  change and queued work must not run against the new world.
+
+### Fixed
+
+- A capture guard against compounding. If the stored baseline goes missing while
+  the game is running, the next capture reads this mod's own output back as the
+  authored value and multiplies it again. That happened: the baseline was moved
+  aside with the game up, a reload followed, and `SC_Voice` went to 2.890 with a
+  baseline claiming 1.700 was authored. Capture now checks the value against
+  `expected_class_volume` and refuses loudly rather than compounding.
+
+---
+
 ## 1.0.1 — 2026-10-08
 
 **Compatible with the 8 October game patch (Steam build `25801363`).** No changes
