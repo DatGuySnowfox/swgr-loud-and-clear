@@ -87,6 +87,25 @@ lifts Bypass, since touching a slider means you want to hear your own mix again.
 Engines below about 0.50 costs the racing noticeable weight, which is a real
 trade rather than a free win.
 
+#### If the panel misbehaves
+
+Closing it froze the game once, with the panel opened during a cutscene. The
+cause is not established, so there are two switches in `CONFIG`:
+
+```lua
+panel_grabs_input = true,   -- false: keyboard only, no cursor, no input-mode calls
+panel_enabled     = true,   -- false: no panel at all, audio side unaffected
+```
+
+`panel_grabs_input = false` is the one to try first. It removes the
+`SetInputMode_UIOnlyEx` and `SetInputMode_GameOnly` calls entirely, which is the
+leading suspect, and leaves the panel working on arrow keys and Enter. You lose
+mouse control of the sliders.
+
+Until this is understood, **open the panel in a menu or paused rather than during
+a cutscene**. Closing now logs each step, so if it happens again the log names
+the step it stopped on.
+
 #### Where settings go
 
 Save writes to

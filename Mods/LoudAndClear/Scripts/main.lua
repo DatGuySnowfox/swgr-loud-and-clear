@@ -85,6 +85,22 @@ local CONFIG = {
     -- uses, so both can be installed together.
     panel_key = Key.HOME,
 
+    -- Set false to leave the panel out entirely. The mod still applies its mix;
+    -- only the UI goes away. This exists because the panel is the newest and
+    -- least proven part, and the audio side should not depend on it.
+    panel_enabled = true,
+
+    -- Whether the panel takes exclusive UI input and shows the cursor.
+    --
+    -- True gives mouse control of the sliders. False leaves the game's input
+    -- alone entirely, so the panel is arrow-keys-and-Enter only with no cursor.
+    --
+    -- Closing the panel froze the game once, with it opened during a cutscene,
+    -- and switching input mode while a cinematic is also managing focus is the
+    -- leading suspect. If that happens again, set this false: it removes those
+    -- calls completely while keeping a usable panel.
+    panel_grabs_input = true,
+
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
     -- or are passed to lac_set. Gain on a parent is inherited by its children,
@@ -593,55 +609,67 @@ local started = false
 local applied = false
 local drift_reported = false
 
+-- The work itself, which must already be on the game thread.
+--
+-- Split out because the panel calls these from inside its own
+-- ExecuteInGameThread callback. Nesting ExecuteInGameThread means asking the
+-- game thread to schedule work for the game thread while it is busy running
+-- ours, which is a deadlock waiting for the right timing, and a deadlock is
+-- exactly what a freeze looks like.
+local function apply_now()
+    local buses, bus_attempted = 0, 0
+    for relpath, multiplier in pairs(CONFIG.duck) do
+        bus_attempted = bus_attempted + 1
+        if set_bus_multiplier(relpath, multiplier) then buses = buses + 1 end
+    end
+
+    local classes, class_attempted = 0, 0
+    if CONFIG.class_boost ~= 1.0 then
+        for _, relpath in ipairs(CONFIG.voice_classes) do
+            class_attempted = class_attempted + 1
+            if set_class_multiplier(relpath, CONFIG.class_boost) then
+                classes = classes + 1
+            end
+        end
+    end
+
+    log("applied: %d/%d buses ducked, %d/%d class volumes boosted",
+        buses, bus_attempted, classes, class_attempted)
+
+    if buses > 0 or classes > 0 then
+        -- Startup is satisfied. Retry only while nothing has ever landed.
+        started = true
+    end
+
+    if buses == 0 and classes == 0 then
+        applied = false
+        log("nothing applied. Ctrl+F8 dumps the audio graph so you can check")
+        log("whether these objects are loaded and what they are really called.")
+    end
+end
+
+local function reset_now()
+    local cleared = 0
+    for relpath in pairs(CONFIG.duck) do
+        if clear_bus(relpath) then cleared = cleared + 1 end
+    end
+    local classes = reset_classes()
+    applied = false
+    log("reset: cleared %d bus overrides, restored %d class volumes",
+        cleared, classes)
+end
+
+-- Entry points for callers that are NOT on the game thread: keybinds, console
+-- commands, the startup poll.
 local function apply()
     -- Claim the work before going async. ExecuteInGameThread defers, so leaving
     -- this until the callback let the startup poll fire a second apply.
     applied = true
-
-    ExecuteInGameThread(function()
-        local buses, bus_attempted = 0, 0
-        for relpath, multiplier in pairs(CONFIG.duck) do
-            bus_attempted = bus_attempted + 1
-            if set_bus_multiplier(relpath, multiplier) then buses = buses + 1 end
-        end
-
-        local classes, class_attempted = 0, 0
-        if CONFIG.class_boost ~= 1.0 then
-            for _, relpath in ipairs(CONFIG.voice_classes) do
-                class_attempted = class_attempted + 1
-                if set_class_multiplier(relpath, CONFIG.class_boost) then
-                    classes = classes + 1
-                end
-            end
-        end
-
-        log("applied: %d/%d buses ducked, %d/%d class volumes boosted",
-            buses, bus_attempted, classes, class_attempted)
-
-        if buses > 0 or classes > 0 then
-            -- Startup is satisfied. Retry only while nothing has ever landed.
-            started = true
-        end
-
-        if buses == 0 and classes == 0 then
-            applied = false
-            log("nothing applied. Ctrl+F8 dumps the audio graph so you can check")
-            log("whether these objects are loaded and what they are really called.")
-        end
-    end)
+    ExecuteInGameThread(apply_now)
 end
 
 local function reset()
-    ExecuteInGameThread(function()
-        local cleared = 0
-        for relpath in pairs(CONFIG.duck) do
-            if clear_bus(relpath) then cleared = cleared + 1 end
-        end
-        local classes = reset_classes()
-        applied = false
-        log("reset: cleared %d bus overrides, restored %d class volumes",
-            cleared, classes)
-    end)
+    ExecuteInGameThread(reset_now)
 end
 
 -- Reads the class volumes back and re-applies only what moved. This is the only
@@ -772,6 +800,7 @@ end
 ----------------------------------------------------------------------
 
 local Panel = (function()
+    if not CONFIG.panel_enabled then return nil end
     local source = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("\\", "/")
     local dir = source:match("^(.*)/[^/]+$")
     local ok, mod = pcall(dofile, dir .. "/Panel.lua")
@@ -821,19 +850,40 @@ local function apply_one(key)
     end
 end
 
+-- Closing froze the game once, with the panel opened during a cutscene. There
+-- was no way to tell how far this got, because none of it logged and a freeze
+-- leaves no crash dump. Each step now says so before attempting it, so the next
+-- occurrence names the step instead of being a mystery.
 local function close_panel()
     local old_panel, old_owner = panel, panel_owner
     panel, panel_owner = nil, nil
-    if old_panel and old_panel.widget and valid(old_panel.widget) then
-        pcall(function() old_panel.widget:RemoveFromParent() end)
-    end
-    if valid(old_owner) then
-        pcall(function()
-            old_owner.bShowMouseCursor = cursor_before
+
+    -- Input mode first, then the widget.
+    --
+    -- The old order removed a focused widget and only then told the engine to
+    -- stop routing input to the UI, which leaves Slate briefly resolving focus
+    -- to a widget that is no longer in the hierarchy. That is a plausible way to
+    -- spin, and it is the wrong order regardless: hand focus back before taking
+    -- away the thing holding it.
+    if CONFIG.panel_grabs_input and valid(old_owner) then
+        vlog("close: restoring input mode")
+        local ok, err = pcall(function()
             StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
                 :SetInputMode_GameOnly(old_owner, false)
         end)
+        if not ok then log("close: SetInputMode_GameOnly failed: %s", tostring(err)) end
+
+        vlog("close: restoring cursor")
+        pcall(function() old_owner.bShowMouseCursor = cursor_before end)
     end
+
+    if old_panel and old_panel.widget and valid(old_panel.widget) then
+        vlog("close: removing widget")
+        local ok, err = pcall(function() old_panel.widget:RemoveFromParent() end)
+        if not ok then log("close: RemoveFromParent failed: %s", tostring(err)) end
+    end
+
+    log("panel closed")
 end
 
 local function open_panel()
@@ -847,6 +897,7 @@ local function open_panel()
     model.selection = 1
     model.bypassed = not applied
 
+    vlog("panel: building widgets")
     local created, err = pcall(function()
         return Panel.create(pc, model, CONFIG.duck_order)
     end)
@@ -859,11 +910,13 @@ local function open_panel()
     cursor_before = pc.bShowMouseCursor
 
     panel:write(model, CONFIG.duck_order)
-    pcall(function()
-        pc.bShowMouseCursor = true
-        StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-            :SetInputMode_UIOnlyEx(pc, panel.widget, 0, false)
-    end)
+    if CONFIG.panel_grabs_input then
+        pcall(function()
+            pc.bShowMouseCursor = true
+            StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+                :SetInputMode_UIOnlyEx(pc, panel.widget, 0, false)
+        end)
+    end
     panel:resize(pc)
     panel:update(model, CONFIG.duck_order, false)
     log("panel open")
@@ -876,7 +929,8 @@ local function adopt(source)
     for relpath, value in pairs(source.duck) do CONFIG.duck[relpath] = value end
     snapshot(model)
     if panel then panel:write(model, CONFIG.duck_order) end
-    apply()
+    applied = true
+    apply_now()
 end
 
 local function panel_action(id)
@@ -905,10 +959,11 @@ local function panel_action(id)
     elseif id == "bypass" then
         model.bypassed = not model.bypassed
         if model.bypassed then
-            reset()
+            reset_now()
             log("bypassed, you are hearing the game's own mix")
         else
-            apply()
+            applied = true
+            apply_now()
             log("bypass off")
         end
     end

@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.1.3 — 2026-10-08
+
+### Fixed
+
+- **Removed a nested `ExecuteInGameThread`.** The panel calls apply and reset
+  from inside its own game-thread callback, and both of those wrapped themselves
+  in another `ExecuteInGameThread`. That asks the game thread to schedule work
+  for the game thread while it is busy running ours, which is a deadlock waiting
+  for the right timing, and a deadlock is what a freeze looks like. Split into
+  `apply_now` / `reset_now` for callers already on the game thread, with thin
+  wrappers for keybinds, console commands and the startup poll.
+
+- **Restore input mode before removing the widget, not after.** The old order
+  removed a focused widget and only then stopped routing input to the UI, which
+  leaves the engine briefly resolving focus to a widget no longer in the
+  hierarchy.
+
+### Added
+
+- `panel_grabs_input` and `panel_enabled` in `CONFIG`. The first drops the input
+  mode and cursor calls entirely, leaving a keyboard-driven panel; the second
+  removes the panel without touching the audio side.
+
+- Step logging through panel open and close. A freeze leaves no crash dump and
+  closing logged nothing at all, so there was no way to tell how far it got.
+
+### Known issue
+
+- Closing the panel froze the game once, opened during a cutscene. Cause not
+  established. The changes above remove the two mechanisms most likely to be
+  responsible and make the next occurrence diagnosable. Until then, open the
+  panel paused or in a menu rather than mid-cutscene.
+
 ## 1.1.2 — 2026-10-08
 
 ### Changed
