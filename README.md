@@ -123,7 +123,7 @@ What is known:
 Tracked at
 [issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If you
 hit it, a hang dump would genuinely help: run
-`procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:	emp\dumps` before
+`procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps` before
 launching and attach what it captures.
 
 #### Where settings go

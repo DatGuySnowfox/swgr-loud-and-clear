@@ -31,6 +31,28 @@ A UE4SS Lua mod for STAR WARS: Galactic Racer. It boosts the dialogue sound
 classes and ducks the music, crowds, airflow and engines that bury them.
 
 
+KNOWN ISSUE: THE PANEL CAN HANG THE GAME
+----------------------------------------
+The game can freeze while the mix panel is in use, and twice it has frozen
+a few seconds after the panel was closed. Three occurrences, intermittent,
+cause not yet established.
+
+If you hit it, open Scripts\\main.lua and set:
+
+    panel_enabled = false,
+
+That removes the panel and the timer behind it. Your mix is unaffected: it
+still applies on launch, and the console commands still work for tuning.
+The audio side on its own has run for a day without a hang.
+
+Tracked at:
+  https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1
+
+If you want to help, a crash dump is genuinely useful. Run this before
+launching, and attach whatever it captures to that issue:
+
+    procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:\\temp\\dumps
+
 REQUIREMENTS
 ------------
 UE4SS with Unreal Engine 5.6 support. This matters. Older builds fail before any
@@ -51,10 +73,10 @@ INSTALLING
 2. Copy the "LoudAndClear" folder from this archive into:
        ...\\Griffin\\Binaries\\Win64\\ue4ss\\Mods
 
-3. Add this line to ue4ss\\Mods\\mods.txt:
-       LoudAndClear : 1
+   The folder contains enabled.txt, which is all UE4SS needs in order to
+   load it. You do not have to edit mods.txt.
 
-4. Launch the game. It applies itself a few seconds in, every launch.
+3. Launch the game. It applies itself a few seconds in, every launch.
 
 
 UNINSTALLING
