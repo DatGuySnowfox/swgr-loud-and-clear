@@ -367,7 +367,7 @@ disassembles it. The game's section names are scrambled and the binary is about
 a full disassembler pass.
 
 ```powershell
-python toolsesolve-address.py "<path to>\SWGR-Win64-Shipping.exe" 140015FD1
+python tools\resolve-address.py "<path to>\SWGR-Win64-Shipping.exe" 140015FD1
 ```
 
 It also prints how much stack the function's prologue reserves, which is what
