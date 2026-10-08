@@ -225,6 +225,30 @@ function Panel:write(model, order)
     end
 end
 
+-- Skips the whole update when nothing visible has changed.
+--
+-- This used to repaint every tick: roughly forty-five UFunction calls ten times
+-- a second, every one of them through UE4SS's global ProcessEvent hook, for a
+-- panel that mostly sits still. A hang dump showed the game's main thread had
+-- overflowed its stack, and that call volume is the largest thing this mod puts
+-- through that hook, so it should not be paid when there is nothing to redraw.
+--
+-- Hover is deliberately not part of the signature. Detecting it costs one call
+-- per button, which is the thing being avoided; the caller polls it at a lower
+-- rate instead.
+function Panel:unchanged(model, order, dirty)
+    local parts = { string.format("%.4f", model.class_boost),
+                    tostring(model.selection), tostring(dirty),
+                    tostring(model.bypassed) }
+    for _, relpath in ipairs(order) do
+        parts[#parts + 1] = string.format("%.4f", model.duck[relpath] or 1.0)
+    end
+    local signature = table.concat(parts, "|")
+    if signature == self.signature then return true end
+    self.signature = signature
+    return false
+end
+
 function Panel:update(model, order, dirty)
     local entry = self.values.class_boost
     entry.widget:SetText(FText(entry.format(model.class_boost)))

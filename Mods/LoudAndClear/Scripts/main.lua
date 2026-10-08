@@ -1057,6 +1057,7 @@ end
 -- Open the panel and the loop starts. Close it and the loop ends. Idle cost goes
 -- from about eleven Lua entries a second to the one from the verify loop.
 local panel_loop_running = false
+local tick = 0
 local start_panel_loop
 local panel_tick
 
@@ -1129,8 +1130,18 @@ panel_tick = function()
                 for _, event in ipairs(batch) do panel_process(event) end
 
                 if panel then
-                    panel:resize(panel_owner)
-                    panel:update(model, CONFIG.duck_order, is_dirty())
+                    -- Resize only needs checking when the viewport might have
+                    -- changed, not ten times a second.
+                    tick = tick + 1
+                    if tick % 10 == 1 then panel:resize(panel_owner) end
+
+                    -- Repaint only when something visible changed, plus a slow
+                    -- poll so hover highlighting still responds.
+                    local dirty = is_dirty()
+                    if not panel:unchanged(model, CONFIG.duck_order, dirty)
+                       or tick % 3 == 0 then
+                        panel:update(model, CONFIG.duck_order, dirty)
+                    end
                 end
             end)
             panel_busy = false
