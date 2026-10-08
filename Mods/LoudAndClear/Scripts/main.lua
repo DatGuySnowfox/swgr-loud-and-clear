@@ -1032,8 +1032,30 @@ local function queue(event)
     if #panel_events < 16 then panel_events[#panel_events + 1] = event end
 end
 
+-- The panel's drain loop exists only while the panel is open.
+--
+-- It used to run at 10 Hz for the whole session. The early return inside it did
+-- not help, because the callback is itself Lua: entering it at all takes the
+-- Lua state lock, so the mod was acquiring that lock about eleven times a second
+-- while doing nothing.
+--
+-- That matters here. A hang dump shows 32 threads blocked in WaitOnAddress,
+-- which is what a C++ mutex blocks on, with UE4SS frames on their stacks. UE4SS
+-- hooks ProcessEvent, so any game thread calling a UFunction passes through it,
+-- and during a cutscene there are many. Constant lock traffic from this mod is
+-- the one thing it contributes to that picture, so it should not be constant.
+--
+-- Open the panel and the loop starts. Close it and the loop ends. Idle cost goes
+-- from about eleven Lua entries a second to the one from the verify loop.
+local panel_loop_running = false
+local start_panel_loop
+local panel_tick
+
 if Panel then
-    RegisterKeyBind(CONFIG.panel_key, function() queue("toggle") end)
+    RegisterKeyBind(CONFIG.panel_key, function()
+        queue("toggle")
+        start_panel_loop()
+    end)
     for key, event in pairs({
         [Key.UP_ARROW] = "previous", [Key.LEFT_ARROW] = "previous",
         [Key.DOWN_ARROW] = "next",   [Key.RIGHT_ARROW] = "next",
@@ -1054,9 +1076,22 @@ if Panel then
         RegisterLoadMapPostHook(function() panel_suspended = false end)
     end)
 
-    LoopAsync(100, function()
+    start_panel_loop = function()
+        if panel_loop_running then return end
+        panel_loop_running = true
+        LoopAsync(100, panel_tick)
+    end
+end
+
+panel_tick = function()
         if panel_suspended or panel_busy then return false end
-        if not panel and #panel_events == 0 then return false end
+
+        -- Nothing open and nothing queued: stop the loop rather than idling.
+        -- start_panel_loop brings it back when the key is pressed.
+        if not panel and #panel_events == 0 then
+            panel_loop_running = false
+            return true
+        end
 
         panel_busy = true
         local ticket = epoch
@@ -1091,7 +1126,6 @@ if Panel then
         end)
         if not ok then panel_busy = false end
         return false
-    end)
 end
 
 ----------------------------------------------------------------------
