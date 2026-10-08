@@ -89,41 +89,74 @@ trade rather than a free win.
 
 #### Known issue: the panel can hang the game
 
-**The game can freeze while the panel is in use, and twice it has frozen a few
-seconds after the panel was cleanly closed.** Three occurrences, intermittent,
-cause not established.
+**The panel is off by default.** It has frozen the game during cutscenes, on
+close and also on open, and the cause is now pinned down far enough to say the
+panel needs rebuilding rather than patching.
 
-Workaround, in `CONFIG` at the top of `main.lua`:
+To try it anyway, in `CONFIG` at the top of `main.lua`:
 
 ```lua
-panel_enabled = false,      -- no panel; the mix is unaffected
-panel_grabs_input = false,  -- keep the panel, drop the input-mode calls
+panel_enabled = true,
 ```
 
-`panel_enabled = false` also removes the 10 Hz loop behind the panel, leaving
-only the 1 Hz verify loop. The audio side on its own has run for a day without a
-hang, so losing the panel costs you nothing but the UI.
+The mix is unaffected either way. It applies on launch, the console commands
+still work, and the audio side alone has run for days without a hang.
 
-What is known:
+**What the crash actually is.** A full-memory dump taken live at the freeze
+shows the game's main thread with `RSP` at `0x400C90`, below its own stack base
+of `0x401000`. That is a stack overflow, so the thread was recursing with no
+stop condition. It was never a deadlock. `RIP` was
+`SWGR-Win64-Shipping.exe+0x15FD1`, inside the function beginning at `+0x15F92`.
 
-- A 6.8 GB hang dump shows the game's main thread blocked and **34 of 154 threads
-  carrying UE4SS frames, 32 of them parked in one identical wait**. Suggestive,
-  but not proof: idle worker threads look identical in a dump.
-- Two of the three hangs followed a clean close by seconds, with every close step
-  logged as completing. So closing is not where it dies.
-- `[FCallbackGarbageCollector] Freed invalid callbacks!` appears shortly before
-  several of them. That is UE4SS discarding callbacks whose objects were
-  collected, which points at object lifetime rather than at the close path.
-- The main thread's stack includes `gameoverlayrenderer64.dll`, the Steam
-  overlay. Overlay plus injected DLL is a known conflict class and has not been
-  ruled out.
-- Ruled out and fixed anyway: a nested `ExecuteInGameThread`, and removing the
-  focused widget before releasing UI input.
+That function is `UObject::ProcessContextOpcode`, the engine's handler for the
+Blueprint `Context` opcode, which is what runs when a Blueprint node
+dereferences its target pin. Read out of the shipping binary rather than
+guessed at:
+
+- It takes `(UObject*, FFrame&, void*, bool)` and clears `FFrame+0x30`,
+  `MostRecentProperty`, as its first act.
+- It zeroes a stack local, then inlines `FFrame::Step` into it: load a byte from
+  `FFrame+0x20`, advance that pointer, call through a 256-entry table. The table
+  is `GNatives`. Every slot in it reads as the same address on disk, which is
+  the static initialiser to `execUndefined` before the runtime registrar
+  overwrites it.
+- It then tests bit 30 of the returned object's flags, `Unreachable`, and when
+  the object is live advances the code pointer by 13 and steps again. Thirteen
+  is `sizeof(CodeSkipSizeType)` plus `sizeof(FProperty*)` plus the opcode byte.
+- It has exactly two direct callers in the image, matching the only two the
+  engine has: `execContext` and `execContextFailSilent`.
+
+Its prologue reserves `0x5D8` bytes, so a few hundred nested Blueprint calls are
+enough to run the stack out.
+
+**What that rules out.** The recursion is Blueprint bytecode. It is not Slate
+layout, not input routing, and not Lua. Six hypotheses were implemented and
+tested before this, and each one was about a native path:
+
+| Hypothesis | Result |
+| --- | --- |
+| Nested `ExecuteInGameThread` | Real bug, fixed, crash recurred |
+| Close ordering | Fixed, crash recurred |
+| Per-toggle widget teardown | Build once and hide instead, crash recurred |
+| Repaint call volume | Cut from 560/s to 230/s, crash recurred |
+| Template conflict with another mod | That mod was not installed |
+| Input mode and cursor calls | Removed entirely, crash recurred |
+
+They failed because they were all looking in the wrong layer.
+
+**What is left to test.** The panel's only contact with Blueprint code is its
+host. `Panel.lua` constructs one of the game's own widget blueprints,
+`WBP_SectionSubLabel_C`, purely to get a usable `WidgetTree`, then replaces
+`WidgetTree.RootWidget` with a canvas of its own. That leaves a live instance of
+a game Blueprint class whose graph still runs against a tree it no longer
+recognises. Removing that contact surface, by hosting on a tree built only from
+engine classes with no Blueprint class involved, is the next build.
 
 Tracked at
 [issue #1](https://github.com/DatGuySnowfox/swgr-loud-and-clear/issues/1). If you
-hit it, a hang dump would genuinely help: run
-`procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps` before
+hit it, a dump still helps, and there is now something specific to look for in
+one. Run
+`procdump64.exe -h -e -ma -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps` before
 launching and attach what it captures.
 
 #### Where settings go
@@ -326,6 +359,20 @@ python tools\check-signatures.py     # do the patterns still resolve cleanly
 `check-signatures.py` reads the patterns out of `Signatures/*.lua`, scans the
 installed exe, and reports what UE4SS would accept. Exit code 1 means do not
 launch. Reference fingerprints are in `tools/known-build.json`.
+
+`resolve-address.py` goes the other way: give it an address from a crash or a
+dump and it names the enclosing function from the exe's exception directory, then
+disassembles it. The game's section names are scrambled and the binary is about
+490 MB, so this answers a one-address question in a second rather than waiting on
+a full disassembler pass.
+
+```powershell
+python toolsesolve-address.py "<path to>\SWGR-Win64-Shipping.exe" 140015FD1
+```
+
+It also prints how much stack the function's prologue reserves, which is what
+identified the panel hang as a stack overflow rather than a deadlock. Needs
+`capstone` (`python -m pip install capstone`).
 
 If a pattern stops matching, UE4SS fails its scan and refuses to start, which is
 the safe failure. Recovery, in order: get a UE4SS build matching the new engine

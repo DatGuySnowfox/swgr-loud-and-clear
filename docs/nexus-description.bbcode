@@ -24,19 +24,21 @@ It only touches volume. No gameplay, saves, visuals or files inside the game are
 
 [b]I still can't guarantee fixes if a future update breaks this.[/b] UE4SS finds the engine by scanning for byte patterns, and a patch can move them. That is exactly why it's open source: the repo includes the tools to check whether an update broke anything before you launch, the reasoning behind every value, and notes on the game's audio layout so anyone can pick it up and fix it without starting from scratch.
 
-[size=4][b]Known issue: the panel can hang the game[/b][/size]
+[size=4][b]Known issue: the panel is off by default[/b][/size]
 
-[b]The game can freeze while the mix panel is in use, and twice it has frozen a few seconds after the panel was closed.[/b] Three occurrences so far, intermittent, and the cause is not yet established.
+[b]The mix panel can freeze the game during cutscenes.[/b] It has done it on close and on open, intermittently. Because of that it now ships disabled, and the mix applies on launch without it.
 
-The audio side on its own has run for a day without a hang, so if you hit this, open [font=Courier New]Scripts\main.lua[/font] and set:
+If you want to try it, open [font=Courier New]Scripts\main.lua[/font] and set:
 
-[code]panel_enabled = false,[/code]
+[code]panel_enabled = true,[/code]
 
-That removes the panel and the timer behind it. Your mix is completely unaffected: everything still applies on launch, and the console commands still work for tuning.
+Outside cutscenes it has been reliable. Your mix is unaffected either way: everything applies on launch, and the console commands still work for tuning.
 
-A hang dump has been captured and analysed. It shows the game's main thread blocked with 32 threads parked in one identical wait, which is suggestive but not conclusive, since idle worker threads look the same. Investigation is ongoing and tracked on GitHub.
+[b]The cause is identified.[/b] A full-memory dump taken at the freeze shows the game's main thread with its stack pointer below its own stack base, which is a stack overflow from runaway recursion, not a deadlock. Reading the shipping executable at the faulting address identifies the function as the engine's handler for the Blueprint [font=Courier New]Context[/font] opcode, the thing that runs when a Blueprint node dereferences its target.
 
-If you hit it and want to help, a dump is genuinely useful. Run [font=Courier New]procdump64.exe -h -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps[/font] before launching and attach whatever it captures to the GitHub issue.
+So the runaway recursion is in Blueprint code, which rules out the whole family of causes that were being chased before: input handling, widget teardown, redraw volume, and the mod's own Lua. The panel's one point of contact with Blueprint code is that it borrows one of the game's own widget blueprints to get a widget tree and then swaps the tree's root out. Rebuilding it without that is the next step, and the panel stays off until it holds up.
+
+Tracked on GitHub, with everything that has been ruled out written down. If you hit it, a dump still helps and there is now something specific to look for. Run [font=Courier New]procdump64.exe -h -e -ma -n 3 -w SWGR-Win64-Shipping.exe C:\temp\dumps[/font] before launching and attach whatever it captures to the issue.
 
 [size=4][b]Requirements[/b][/size]
 
