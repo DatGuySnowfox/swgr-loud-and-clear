@@ -287,4 +287,27 @@ function Panel:resize(controller)
     self.frame:SetRenderScale({ X = scale, Y = scale })
 end
 
+-- ESlateVisibility: 0 Visible, 1 Collapsed, 2 Hidden.
+--
+-- Hiding rather than destroying exists because the game terminates at the exact
+-- moment the panel is torn down. Four occurrences, the last one instant: the log
+-- records "panel closed" and the process is gone, with no catchable exception
+-- and no dump, which is what a fail-fast looks like.
+--
+-- Building about forty UMG widgets with StaticConstructObject and then tearing
+-- them down on every close is the riskiest thing this mod does. Built once and
+-- reused, that happens a single time per session instead of on every toggle.
+function Panel:show()
+    pcall(function() self.widget:SetVisibility(0) end)
+end
+
+function Panel:hide()
+    pcall(function() self.widget:SetVisibility(1) end)
+end
+
+-- Only for a level change, where the widgets genuinely cannot be kept.
+function Panel:destroy()
+    pcall(function() self.widget:RemoveFromParent() end)
+end
+
 return Panel

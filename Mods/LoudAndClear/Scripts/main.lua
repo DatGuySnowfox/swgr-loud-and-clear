@@ -819,6 +819,9 @@ local Panel = (function()
 end)()
 
 local panel, panel_owner, cursor_before
+-- The built panel survives a close. 'panel' means shown; 'panel_cached'
+-- holds the widgets so they are constructed once per session.
+local panel_cached
 local saved = { class_boost = nil, duck = {} }
 local model = { selection = 1, duck = {} }
 local panel_events = {}
@@ -887,9 +890,8 @@ local function close_panel()
     end
 
     if old_panel and old_panel.widget and valid(old_panel.widget) then
-        vlog("close: removing widget")
-        local ok, err = pcall(function() old_panel.widget:RemoveFromParent() end)
-        if not ok then log("close: RemoveFromParent failed: %s", tostring(err)) end
+        vlog("close: hiding widget")
+        old_panel:hide()
     end
 
     log("panel closed")
@@ -929,15 +931,22 @@ local function open_panel()
         return false
     end
 
-    vlog("panel: building widgets")
-    local created, err = pcall(function()
-        return Panel.create(pc, model, CONFIG.duck_order)
-    end)
-    if not created then
-        log("could not open the panel: %s", tostring(err))
-        return false
+    if panel_cached and valid(panel_cached.widget) then
+        vlog("panel: reusing widgets")
+        panel = panel_cached
+        panel:show()
+    else
+        vlog("panel: building widgets")
+        local created, err = pcall(function()
+            return Panel.create(pc, model, CONFIG.duck_order)
+        end)
+        if not created then
+            log("could not open the panel: %s", tostring(err))
+            return false
+        end
+        panel = err
+        panel_cached = panel
     end
-    panel = err
     panel_owner = pc
     cursor_before = pc.bShowMouseCursor
 
@@ -1072,6 +1081,12 @@ if Panel then
             epoch = epoch + 1
             panel_events = {}
             close_panel()
+            -- Widgets belong to the old world and cannot be carried over, so
+            -- this is the one place they are genuinely destroyed.
+            if panel_cached then
+                pcall(function() panel_cached:destroy() end)
+                panel_cached = nil
+            end
         end)
         RegisterLoadMapPostHook(function() panel_suspended = false end)
     end)
