@@ -128,18 +128,6 @@ local CONFIG = {
     -- on probation. Turning it on is reasonable once the probation ends.
     panel_grabs_input = false,
 
-    -- Logs when a cutscene starts and ends, while the panel is on probation.
-    --
-    -- The cutscene guard assumes this game drives its cinematics through level
-    -- sequences, which is a guess. This answers whether it does without needing
-    -- the console: play normally, then read UE4SS.log. If no cutscene is ever
-    -- reported while one is plainly on screen, the guard is inert here and only
-    -- the rebuilt panel host is protecting anything.
-    --
-    -- Costs one object-array scan a second, and only while panel_enabled is
-    -- true. Set false once that question is answered.
-    log_cutscene_state = true,
-
     -- Whether the panel refuses to open during a cutscene, and closes itself if
     -- one starts while it is open.
     --
@@ -151,7 +139,7 @@ local CONFIG = {
     -- So: leave it true for normal use. Set it false only to deliberately test
     -- whether the host rebuild holds, knowing that is the exact condition that
     -- used to take the game down. Save your progress first.
-    cutscene_guard = true,
+    cutscene_guard = false,   -- TESTING: deliberately exercising the crash condition
 
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
@@ -956,12 +944,21 @@ end
 -- Confirmed working in this game: it reports true for the duration of a cutscene
 -- and false either side, and the sequences it names are the real ones.
 --
+-- CALL THIS ONLY FROM A USER ACTION OR WHILE THE PANEL IS OPEN. Never on a
+-- timer that runs through startup and level loads. FindAllOf walks the whole
+-- object array, and a build that polled it once a second from mod load took an
+-- access violation reading address 0 inside UE4SS.dll, on a UE4SS thread, while
+-- the menu was loading. The object array is being rewritten during a load and
+-- iterating it then is not safe. A Lua pcall does not catch that; it is a native
+-- fault and it takes the process down.
+--
+-- The panel tick is a safe caller because it already bails out while
+-- panel_suspended is set, which the LoadMap hooks cover.
+--
 -- Still best effort. If some cinematic runs without a sequence player this
 -- returns false and the panel opens anyway, and if an ambient looping sequence
--- counts as playing it could refuse when there is no cutscene. The automatic
--- start/end logging is there to make either show up.
+-- counts as playing it could refuse when there is no cutscene.
 local SEQUENCE_CLASSES = { "LevelSequencePlayer", "MovieSceneSequencePlayer" }
-local cutscene_was = false
 local refusal_logged = false
 
 local function cutscene(report)
@@ -1379,16 +1376,6 @@ if CONFIG.apply_on_start then
                 return true
             end
             return false
-        end
-
-        -- Answers the "can the guard see this game's cutscenes" question without
-        -- anyone having to run a command: play normally, then read the log.
-        if CONFIG.log_cutscene_state and CONFIG.panel_enabled then
-            local ok, playing = pcall(cutscene)
-            if ok and playing ~= cutscene_was then
-                cutscene_was = playing
-                log("cutscene %s", playing and "started" or "ended")
-            end
         end
 
         if CONFIG.verify_seconds <= 0 then

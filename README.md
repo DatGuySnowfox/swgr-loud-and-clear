@@ -157,22 +157,19 @@ is playing, and closes itself if one starts while it is open. Detection is
 does not map engine bitfield bools, so reading it returns a `TrivialObject`
 rather than `true` or `false`, and the original guard silently never fired.
 
-That detection is a guess about how this game drives its cinematics, so verify
-it rather than trusting it. Nothing needs running: while the panel is enabled,
-the mod logs `cutscene started` and `cutscene ended` as they happen, so play
-normally and then read `UE4SS.log`.
+**This is confirmed working in this game.** A log capture shows it reporting
+`playing = false` before a cutscene, `true` for its duration while naming the
+real `LevelSequencePlayer` objects, and `false` again after. **Ctrl+F10** writes
+the same report to the log on demand, and `lac_cutscene` does it from the console
+for anyone who has one turned on.
 
-If no cutscene is ever reported while one is plainly on screen, the guard is
-inert here and only the host rebuild is protecting you.
-
-For an answer at a specific moment, **Ctrl+F10** writes the same report to the
-log on demand, and `lac_cutscene` does it from the console for anyone who has one
-turned on. Both print how many sequence players are live and whether any is
-playing.
-
-Set `log_cutscene_state = false` in `CONFIG` to stop the automatic logging once
-the question is settled. It costs one object-array scan a second, and only while
-`panel_enabled` is true.
+One thing not to do with it: an earlier build polled this once a second from mod
+load, to log cutscene starts and ends automatically. That took an access
+violation reading address 0 inside `UE4SS.dll` while the menu was loading.
+`FindAllOf` walks the whole object array, the array is being rewritten during a
+load, and a Lua `pcall` does not catch a native fault. The check now runs only on
+a keypress or while the panel is already open, and the panel tick already stops
+while a level is loading.
 
 **The guard is containment, not the fix**, and having it on means the fix never
 gets exercised: the crash needs the panel open during a cutscene, and the guard

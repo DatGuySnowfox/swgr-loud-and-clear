@@ -33,10 +33,15 @@
 
 ### Added
 
-- **Cutscene starts and ends are logged automatically** while the panel is
-  enabled, so confirming the guard can see this game's cinematics needs nothing
-  but playing and then reading `UE4SS.log`. Turn it off with
-  `log_cutscene_state = false` once that is settled.
+- The cutscene guard is **confirmed working in this game**: a log capture shows
+  it false before a cutscene, true throughout while naming the real
+  `LevelSequencePlayer` objects, and false after.
+
+  A build that polled this once a second from mod load, to log starts and ends
+  automatically, crashed the game during a menu load: an access violation reading
+  address 0 inside `UE4SS.dll`. `FindAllOf` walks the object array, which is
+  being rewritten during a load. That poll is gone; the check runs only on a
+  keypress or while the panel is already open.
 
 - **Ctrl+F10** writes the same report on demand, and `lac_cutscene` does it from
   the console. The console is off by default in UE4SS, so the key is the one that
