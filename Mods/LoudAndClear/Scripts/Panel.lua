@@ -168,14 +168,21 @@ function Panel.create(controller, model, order)
         cell:SetPadding({ Left = 3, Top = 0, Right = 3, Bottom = 0 })
     end
 
-    local row = make("HorizontalBox")
-    button("save", "Save", row)
-    button("revert", "Revert", row)
-    button("defaults", "Defaults", row)
-    button("close", "Close", row)
-    add(row, 34, 4)
+    -- Two rows, grouped by what they touch. Top row changes the values, bottom
+    -- row changes the mode. Four in a line read as four variations of "go back".
+    local values_row = make("HorizontalBox")
+    button("save", "Save", values_row)
+    button("undo", "Undo", values_row)
+    button("defaults", "Mod defaults", values_row)
+    add(values_row, 32, 5)
 
-    add(label("Saved values load automatically next launch.", 12, MUTED), 18, 0)
+    local mode_row = make("HorizontalBox")
+    button("bypass", "Bypass", mode_row)
+    button("close", "Close", mode_row)
+    add(mode_row, 32, 4)
+
+    add(label("Bypass compares against the game's own mix.", 12, MUTED), 17, 1)
+    add(label("Saved values load automatically next launch.", 12, MUTED), 17, 0)
 
     slot:SetSize({ X = self.width, Y = self.height })
     self.widget.bIsFocusable = true
@@ -228,23 +235,42 @@ function Panel:update(model, order, dirty)
         end
     end
 
-    self.status:SetText(FText(dirty and "Unsaved changes" or "Saved"))
-    tint(self.status, dirty and AMBER or MUTED)
+    if model.bypassed then
+        self.status:SetText(FText("Bypassed, hearing the game's own mix"))
+        tint(self.status, CYAN)
+    else
+        self.status:SetText(FText(dirty and "Unsaved changes" or "Saved"))
+        tint(self.status, dirty and AMBER or MUTED)
+    end
 
     for index, button in ipairs(self.buttons) do
+        -- Save and Undo only mean something while there are unsaved changes.
         local enabled = true
-        if button.id == "save" or button.id == "revert" then enabled = dirty end
+        if button.id == "save" or button.id == "undo" then enabled = dirty end
         button.control:SetIsEnabled(enabled)
 
+        -- Bypass is a toggle, so its own label carries the state.
+        if button.id == "bypass" then
+            button.caption:SetText(FText(model.bypassed and "Bypass: ON" or "Bypass: off"))
+        end
+
+        local active = index == model.selection or button.control:IsHovered()
         local background = ROW_BG
-        if not enabled then background = colour(22, 26, 36, 0.8) end
-        if enabled and (index == model.selection or button.control:IsHovered()) then
+        if not enabled then
+            background = colour(22, 26, 36, 0.8)
+        elseif button.id == "bypass" and model.bypassed then
+            background = CYAN            -- latched, so it reads as on at a glance
+        elseif active then
             background = button.id == "save" and AMBER or CYAN_DIM
         end
         button.control:SetBackgroundColor(background)
-        tint(button.caption, (not enabled) and DISABLED
-             or ((index == model.selection or button.control:IsHovered())
-                 and colour(12, 16, 24) or TEXT))
+
+        local dark = colour(12, 16, 24)
+        local caption = TEXT
+        if not enabled then caption = DISABLED
+        elseif button.id == "bypass" and model.bypassed then caption = dark
+        elseif active then caption = dark end
+        tint(button.caption, caption)
     end
 end
 

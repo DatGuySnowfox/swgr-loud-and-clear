@@ -41,9 +41,27 @@ It only touches volume. No gameplay, saves, visuals or files inside the game are
 
 [size=4][b]Tuning[/b][/size]
 
-Press [b]HOME[/b] for the panel: nine sliders, voice level and each competing channel, every change audible as you drag. Save keeps them for next launch.
+Press [b]HOME[/b] in game. Nine sliders: voice level at the top, then the seven channels that compete with it, each showing its live value in dB. [b]Everything applies as you drag[/b], so you hear every change while you make it.
 
-Or use the UE4SS console, which reaches channels the panel does not list:
+[list]
+[*][b]Save[/b] keeps the current values for future launches
+[*][b]Undo[/b] goes back to the last saved values
+[*][b]Mod defaults[/b] goes back to what the mod ships with
+[*][b]Bypass[/b] toggles the game's own unmodified mix
+[*][b]Close[/b], or HOME again
+[/list]
+
+Mouse works, or arrow keys and Enter.
+
+[b]Use Bypass to check a change is actually better.[/b] Toggling between your mix and the game's is the fastest way to tell, and far more reliable than trying to remember what the last value sounded like. Dragging a slider lifts Bypass automatically.
+
+[b]How to tune it:[/b] open the panel somewhere with dialogue playing, raise Voice level until speech is clear, then pull down whatever is masking it (music and crowds in menus and cutscenes, airflow and engines during a race). Hit Bypass twice to confirm you improved things rather than just made them louder, then Save.
+
+Two things worth knowing. If raising Voice level starts sounding harsh rather than louder, you are driving the compressor on the game's main bus; back it off and take the rest from the channels below. And engines below about half costs the racing noticeable weight, which is a real trade rather than a free win.
+
+The panel takes input focus while open, so open it paused or in a menu rather than mid-race.
+
+You can also use the UE4SS console, which reaches channels the panel does not list:
 
 [code]lac_set Submixes/SS_Music 0.45
 lac_set Submixes/SS_Crowds 0.50

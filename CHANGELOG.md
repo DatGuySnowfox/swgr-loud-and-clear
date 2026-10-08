@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.1.2 — 2026-10-08
+
+### Changed
+
+- **Reworked the panel buttons, which were ambiguous and one was mislabelled.**
+  "Defaults" restored the *game's* mix rather than the mod's shipped values, and
+  sat next to "Revert", so two of four buttons read as variations of "go back".
+
+  Now five, in two rows grouped by what they touch. Values: **Save**, **Undo**
+  (back to last saved), **Mod defaults** (the values the mod ships with). Mode:
+  **Bypass**, **Close**.
+
+- **Bypass is a toggle rather than a one-shot.** Switching between your mix and
+  the game's is how you tell whether a change is an improvement or just louder,
+  and that comparison is the whole job. The latched state shows on the button
+  and in the status line. Dragging any slider lifts it, since touching a slider
+  means wanting your own mix back.
+
+### Fixed
+
+- The startup poll undid Defaults a tick after it ran. One flag was answering
+  two questions: whether the startup apply had happened, and whether our mix is
+  in effect. Reset cleared it, so the poll re-applied everything. Split into
+  `started` and `applied`, and the verify pass now returns early when not
+  applied, since re-applying drift would have undone the choice more slowly.
+
+### Documentation
+
+- Panel instructions in the README and on the mod page: what each button does,
+  a tuning walkthrough, and the two things worth knowing (pushing voice too far
+  drives the main bus compressor; engines below about 0.50 costs the racing
+  noticeable weight).
+
 ## 1.1.0 — 2026-10-08
 
 ### Added

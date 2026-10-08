@@ -47,14 +47,47 @@ Nothing to press for the normal behaviour.
 
 ### The panel
 
-`HOME` opens nine live sliders: voice level and the seven duck channels, each
-with a dB readout, plus Save, Revert, Defaults and Close. Arrow keys move between
-buttons, Enter activates, or use the mouse.
+Press `HOME` in game. You get nine sliders: voice level at the top, then the
+seven channels that compete with it, each showing its live value in dB.
 
 **Everything applies as you drag.** That is the only reason a panel beats the
-console here: mix values are judged by ear, and a console round trip breaks that
-loop. Only the sliders that moved are re-applied, so dragging does not push all
-nine values at the engine ten times a second.
+console here: a mix is judged by ear, and a console round trip breaks that loop.
+Only the sliders that moved are re-applied, so dragging does not push all nine
+values at the engine ten times a second.
+
+| Button | What it does |
+| --- | --- |
+| **Save** | Keeps the current values for future launches. Greyed out when there is nothing unsaved. |
+| **Undo** | Back to the last saved values, discarding changes since. Greyed out when there is nothing to undo. |
+| **Mod defaults** | Back to the values the mod ships with (1.7x voice, the dB cuts in the table above). Still needs Save to persist. |
+| **Bypass** | A toggle. On means you hear the game's own unmodified mix. |
+| **Close** | Closes the panel. `HOME` does the same. |
+
+Mouse works, or arrow keys to move between buttons and Enter to activate.
+
+**Use Bypass to decide whether a change is actually better.** Toggling between
+your mix and the game's is the fastest way to tell, and far more reliable than
+trying to remember what the previous value sounded like. Dragging any slider
+lifts Bypass, since touching a slider means you want to hear your own mix again.
+
+#### How to tune it
+
+1. Open the panel somewhere with dialogue playing, paused or in a menu. The
+   panel takes UI input focus, so the game will not take driving input while it
+   is open.
+2. Raise **Voice level** until speech is clearly audible. If it starts sounding
+   harsh rather than louder, you are driving the compressor on the game's main
+   bus; back it off and take the rest from the channels below.
+3. Pull down whichever channel is actually masking the dialogue. Music and
+   crowds are the usual culprits, airflow and engines during a race.
+4. Hit **Bypass** twice to check you have improved things rather than just made
+   them louder.
+5. **Save**.
+
+Engines below about 0.50 costs the racing noticeable weight, which is a real
+trade rather than a free win.
+
+#### Where settings go
 
 Save writes to
 `%LOCALAPPDATA%\StarWarsGalacticRacer\Saved\LoudAndClear-settings.txt`, which
@@ -62,9 +95,7 @@ loads over the `CONFIG` defaults on the next launch. That file is deliberately
 separate from `baseline.txt`: one records what you chose, the other what the game
 authored, and conflating them is how an earlier compounding bug got its chance.
 
-While the panel is open it takes UI input focus and shows the cursor, restoring
-your previous cursor state on close, so the game will not take driving input.
-Open it paused or in a menu rather than mid-race.
+Delete the settings file to go back to the shipped defaults permanently.
 
 `panel_key` in `CONFIG` changes the binding. It defaults to `Key.HOME` rather
 than `Key.INS` so it coexists with the Galactic FOV Panel mod.

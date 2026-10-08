@@ -146,6 +146,12 @@ local CONFIG = {
     verbose = true,
 }
 
+-- The values above, captured before load_settings() overwrites them. "Mod
+-- defaults" has to mean the shipped mix, and once a settings file has been read
+-- CONFIG no longer knows what that was.
+local DEFAULTS = { class_boost = CONFIG.class_boost, duck = {} }
+for relpath, value in pairs(CONFIG.duck) do DEFAULTS.duck[relpath] = value end
+
 ----------------------------------------------------------------------
 -- plumbing
 ----------------------------------------------------------------------
@@ -799,9 +805,10 @@ end
 -- Pushes a single changed value straight at the audio engine, so dragging a
 -- slider is audible immediately.
 local function apply_one(key)
-    -- Touching a slider means the user wants our mix, which matters after
-    -- Defaults: it re-engages the verify pass that reset had switched off.
+    -- Touching a slider means the user wants our mix, so it re-engages the
+    -- verify pass and lifts bypass rather than fighting them.
     applied = true
+    model.bypassed = false
 
     if key == "class_boost" then
         CONFIG.class_boost = model.class_boost
@@ -838,6 +845,7 @@ local function open_panel()
     snapshot(model)
     snapshot(saved)
     model.selection = 1
+    model.bypassed = not applied
 
     local created, err = pcall(function()
         return Panel.create(pc, model, CONFIG.duck_order)
@@ -862,21 +870,47 @@ local function open_panel()
     return true
 end
 
+-- Loads a set of values into CONFIG, the model and the sliders, then applies.
+local function adopt(source)
+    CONFIG.class_boost = source.class_boost
+    for relpath, value in pairs(source.duck) do CONFIG.duck[relpath] = value end
+    snapshot(model)
+    if panel then panel:write(model, CONFIG.duck_order) end
+    apply()
+end
+
 local function panel_action(id)
-    if id == "close" then close_panel(); return end
-    if id == "save" then
+    if id == "close" then
+        close_panel()
+
+    elseif id == "save" then
         save_settings()
         snapshot(saved)
-        log("settings saved to %s", SETTINGS_FILE)
-    elseif id == "revert" then
-        CONFIG.class_boost = saved.class_boost
-        for relpath, value in pairs(saved.duck) do CONFIG.duck[relpath] = value end
-        snapshot(model)
-        panel:write(model, CONFIG.duck_order)
-        apply()
+        log("saved")
+
+    -- Undo: back to the last saved values. Only meaningful while dirty, and the
+    -- button is disabled when it is not.
+    elseif id == "undo" then
+        adopt(saved)
+        log("unsaved changes discarded")
+
+    -- Mod defaults: the values this mod ships with, not the game's.
     elseif id == "defaults" then
-        reset()
-        log("restored the game's own levels. Save to keep this.")
+        adopt(DEFAULTS)
+        log("back to the mod's default mix. Save to keep this.")
+
+    -- Bypass: a toggle, not a one-shot, so the game's own mix can be compared
+    -- against this one by ear. That comparison is the entire job here, and the
+    -- old one-way "Defaults" button made it awkward and was mislabelled besides.
+    elseif id == "bypass" then
+        model.bypassed = not model.bypassed
+        if model.bypassed then
+            reset()
+            log("bypassed, you are hearing the game's own mix")
+        else
+            apply()
+            log("bypass off")
+        end
     end
 end
 
