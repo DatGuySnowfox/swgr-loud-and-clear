@@ -69,6 +69,22 @@ local CONFIG = {
         ["Submixes/SS_Ambience"]                       = 0.80,  -- -1.94 dB
     },
 
+    -- Display order for the panel. Only these appear as sliders; anything else
+    -- in duck above still applies, it just has no row.
+    duck_order = {
+        "Submixes/SS_Music",
+        "Submixes/SS_Crowds",
+        "Submixes/SS_HighSpeedAirflow",
+        "Submixes/SS_NonLocalPlayerEngineAndExhaust",
+        "Submixes/SS_LocalPlayerEngine",
+        "Submixes/SS_LocalPlayerExhaust",
+        "Submixes/SS_Ambience",
+    },
+
+    -- Opens the in-game mix panel. Avoids INS, which the Galactic FOV Panel mod
+    -- uses, so both can be installed together.
+    panel_key = Key.HOME,
+
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
     -- or are passed to lac_set. Gain on a parent is inherited by its children,
@@ -237,6 +253,68 @@ local function load_baseline()
         log("restored %d authored class volumes from %s", count, BASELINE_FILE)
     end
     return count
+end
+
+----------------------------------------------------------------------
+-- user settings
+----------------------------------------------------------------------
+
+-- Values the panel saves, layered over the CONFIG defaults. Kept separate from
+-- the baseline file: one records what the game authored, the other what the user
+-- chose, and conflating them is how the compounding bug got its chance.
+
+local SETTINGS_FILE = (function()
+    local localappdata = os.getenv("LOCALAPPDATA")
+    if localappdata then
+        return localappdata .. "/StarWarsGalacticRacer/Saved/LoudAndClear-settings.txt"
+    end
+    return "LoudAndClear-settings.txt"
+end)()
+
+local function load_settings()
+    local handle = io.open(SETTINGS_FILE, "r")
+    if not handle then return 0 end
+    local count = 0
+    for line in handle:lines() do
+        if not line:match("^%s*#") then
+            local key, value = line:match("^([^=]+)=(.+)$")
+            local number = tonumber(value)
+            if key and number then
+                if key == "class_boost" then
+                    CONFIG.class_boost = number
+                    count = count + 1
+                else
+                    local relpath = key:match("^duck:(.+)$")
+                    -- Only accept keys we already know, so a stale file cannot
+                    -- introduce a submix this build no longer has.
+                    if relpath and CONFIG.duck[relpath] ~= nil then
+                        CONFIG.duck[relpath] = number
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+    handle:close()
+    if count > 0 then log("loaded %d saved settings", count) end
+    return count
+end
+
+local function save_settings()
+    local handle = io.open(SETTINGS_FILE, "w")
+    if not handle then
+        log("could not write %s", SETTINGS_FILE)
+        return false
+    end
+    handle:write("# Loud and Clear, written by the in-game panel\n")
+    handle:write(string.format("class_boost=%.4f\n", CONFIG.class_boost))
+    for _, relpath in ipairs(CONFIG.duck_order) do
+        if CONFIG.duck[relpath] then
+            handle:write(string.format("duck:%s=%.4f\n", relpath, CONFIG.duck[relpath]))
+        end
+    end
+    handle:close()
+    return true
 end
 
 ----------------------------------------------------------------------
@@ -664,6 +742,214 @@ local function dump()
 end
 
 ----------------------------------------------------------------------
+-- in-game panel
+----------------------------------------------------------------------
+
+local Panel = (function()
+    local source = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("\\", "/")
+    local dir = source:match("^(.*)/[^/]+$")
+    local ok, mod = pcall(dofile, dir .. "/Panel.lua")
+    if ok and type(mod) == "table" then return mod end
+    log("panel unavailable: %s", tostring(mod))
+    return nil
+end)()
+
+local panel, panel_owner, cursor_before
+local saved = { class_boost = nil, duck = {} }
+local model = { selection = 1, duck = {} }
+local panel_events = {}
+local panel_busy, panel_suspended = false, false
+local epoch = 0
+
+local function snapshot(into)
+    into.class_boost = CONFIG.class_boost
+    into.duck = {}
+    for relpath, value in pairs(CONFIG.duck) do into.duck[relpath] = value end
+end
+
+local function is_dirty()
+    if not saved.class_boost then return false end
+    if math.abs(model.class_boost - saved.class_boost) > 0.0001 then return true end
+    for relpath, value in pairs(model.duck) do
+        if math.abs(value - (saved.duck[relpath] or value)) > 0.0001 then return true end
+    end
+    return false
+end
+
+-- Pushes a single changed value straight at the audio engine, so dragging a
+-- slider is audible immediately.
+local function apply_one(key)
+    if key == "class_boost" then
+        CONFIG.class_boost = model.class_boost
+        for _, relpath in ipairs(CONFIG.voice_classes) do
+            set_class_multiplier(relpath, CONFIG.class_boost)
+        end
+    else
+        CONFIG.duck[key] = model.duck[key]
+        set_bus_multiplier(key, model.duck[key])
+    end
+end
+
+local function close_panel()
+    local old_panel, old_owner = panel, panel_owner
+    panel, panel_owner = nil, nil
+    if old_panel and old_panel.widget and valid(old_panel.widget) then
+        pcall(function() old_panel.widget:RemoveFromParent() end)
+    end
+    if valid(old_owner) then
+        pcall(function()
+            old_owner.bShowMouseCursor = cursor_before
+            StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+                :SetInputMode_GameOnly(old_owner, false)
+        end)
+    end
+end
+
+local function open_panel()
+    if not Panel then return false end
+    local pc
+    local ok = pcall(function() pc = UEHelpers.GetPlayerController() end)
+    if not (ok and valid(pc)) then return false end
+
+    snapshot(model)
+    snapshot(saved)
+    model.selection = 1
+
+    local created, err = pcall(function()
+        return Panel.create(pc, model, CONFIG.duck_order)
+    end)
+    if not created then
+        log("could not open the panel: %s", tostring(err))
+        return false
+    end
+    panel = err
+    panel_owner = pc
+    cursor_before = pc.bShowMouseCursor
+
+    panel:write(model, CONFIG.duck_order)
+    pcall(function()
+        pc.bShowMouseCursor = true
+        StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+            :SetInputMode_UIOnlyEx(pc, panel.widget, 0, false)
+    end)
+    panel:resize(pc)
+    panel:update(model, CONFIG.duck_order, false)
+    log("panel open")
+    return true
+end
+
+local function panel_action(id)
+    if id == "close" then close_panel(); return end
+    if id == "save" then
+        save_settings()
+        snapshot(saved)
+        log("settings saved to %s", SETTINGS_FILE)
+    elseif id == "revert" then
+        CONFIG.class_boost = saved.class_boost
+        for relpath, value in pairs(saved.duck) do CONFIG.duck[relpath] = value end
+        snapshot(model)
+        panel:write(model, CONFIG.duck_order)
+        apply()
+    elseif id == "defaults" then
+        reset()
+        log("restored the game's own levels. Save to keep this.")
+    end
+end
+
+local function panel_process(event)
+    if event == "toggle" then
+        if panel then close_panel() else open_panel() end
+        return
+    end
+    if not panel then return end
+    if event == "next" or event == "previous" then
+        local step = (event == "next") and 1 or -1
+        model.selection = (model.selection - 1 + step) % #panel.buttons + 1
+    elseif event == "activate" then
+        local item = panel.buttons[model.selection]
+        if item and item.control:GetIsEnabled() then panel_action(item.id) end
+    elseif event == "click" then
+        for index, item in ipairs(panel.buttons) do
+            if item.control:IsHovered() and item.control:GetIsEnabled() then
+                model.selection = index
+                panel_action(item.id)
+                break
+            end
+        end
+    end
+end
+
+-- Keybind callbacks do not run on the game thread, so they only enqueue. The
+-- loop below drains the queue where touching UObjects is safe.
+local function queue(event)
+    if panel_suspended then return end
+    if event ~= "toggle" and not panel then return end
+    if #panel_events < 16 then panel_events[#panel_events + 1] = event end
+end
+
+if Panel then
+    RegisterKeyBind(CONFIG.panel_key, function() queue("toggle") end)
+    for key, event in pairs({
+        [Key.UP_ARROW] = "previous", [Key.LEFT_ARROW] = "previous",
+        [Key.DOWN_ARROW] = "next",   [Key.RIGHT_ARROW] = "next",
+        [Key.RETURN] = "activate",   [Key.LEFT_MOUSE_BUTTON] = "click",
+    }) do
+        RegisterKeyBind(key, function() queue(event) end)
+    end
+
+    -- Widgets do not survive a level change, and work already queued against the
+    -- old world must not run against the new one. The epoch ticket discards it.
+    pcall(function()
+        RegisterLoadMapPreHook(function()
+            panel_suspended = true
+            epoch = epoch + 1
+            panel_events = {}
+            close_panel()
+        end)
+        RegisterLoadMapPostHook(function() panel_suspended = false end)
+    end)
+
+    LoopAsync(100, function()
+        if panel_suspended or panel_busy then return false end
+        if not panel and #panel_events == 0 then return false end
+
+        panel_busy = true
+        local ticket = epoch
+        local ok = pcall(ExecuteInGameThread, function()
+            local fine, reason = pcall(function()
+                if panel_suspended or ticket ~= epoch then return end
+
+                if panel and not (valid(panel_owner) and valid(panel.widget)) then
+                    close_panel(); panel_events = {}; return
+                end
+
+                if panel then
+                    for _, key in ipairs(panel:read(model, CONFIG.duck_order)) do
+                        apply_one(key)
+                    end
+                end
+
+                local batch = panel_events
+                panel_events = {}
+                for _, event in ipairs(batch) do panel_process(event) end
+
+                if panel then
+                    panel:resize(panel_owner)
+                    panel:update(model, CONFIG.duck_order, is_dirty())
+                end
+            end)
+            panel_busy = false
+            if not fine then
+                log("panel error, closing: %s", tostring(reason))
+                pcall(close_panel)
+            end
+        end)
+        if not ok then panel_busy = false end
+        return false
+    end)
+end
+
+----------------------------------------------------------------------
 -- bindings
 ----------------------------------------------------------------------
 
@@ -735,7 +1021,10 @@ end)
 
 log("loaded. Ctrl+F7 apply, Ctrl+F8 dump, Ctrl+F9 reset")
 
--- Before anything touches a class, recover the authored volumes.
+-- Order matters. Settings layer the user's choices over the CONFIG defaults, so
+-- they have to land before the first apply reads those values. The baseline is
+-- what the game authored, and has to land before anything writes a class.
+load_settings()
 load_baseline()
 
 if CONFIG.apply_on_start then
