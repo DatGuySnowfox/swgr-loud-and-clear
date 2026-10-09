@@ -208,6 +208,15 @@ local CONFIG = {
     boost_step = 0.05,
     boost_ceiling = 2.0,
 
+    -- Play a sample through each of these when Bypass is toggled, so there is
+    -- something to judge when the game is quiet. Samples are found at runtime
+    -- by their sound class, never by asset path, so they always route through
+    -- the stage being adjusted. Set test_sounds = false to turn it off.
+    test_sounds = true,
+    test_classes = { "SC_Voice", "SC_SFX", "SC_Music" },
+    test_max_seconds = 5.0,
+    test_min_seconds = 0.4,
+
     expected_class_volume = 1.0,
     baseline_tolerance = 0.01,
 
@@ -956,6 +965,102 @@ end
 
 -- Pushes a single changed value straight at the audio engine, so dragging a
 -- slider is audible immediately.
+----------------------------------------------------------------------
+-- test samples
+----------------------------------------------------------------------
+
+-- One cached SoundWave per class name, found on first use.
+local samples = nil
+
+local function find_samples()
+    if samples then return samples end
+    samples = {}
+
+    local wanted = {}
+    for _, name in ipairs(CONFIG.test_classes) do wanted[name] = true end
+
+    local ok, waves = pcall(FindAllOf, "SoundWave")
+    if not ok or not waves then
+        log("no sound waves loaded yet, so there is nothing to sample")
+        return samples
+    end
+
+    for _, wave in ipairs(waves) do
+        if valid(wave) then
+            local class_name
+            pcall(function()
+                local sc = wave.SoundClassObject
+                if valid(sc) then class_name = sc:GetFName():ToString() end
+            end)
+
+            if class_name and wanted[class_name] and not samples[class_name] then
+                local duration, looping
+                pcall(function() duration = wave.Duration end)
+                pcall(function() looping = wave.bLooping end)
+
+                -- A looping wave would play forever with nothing to stop it,
+                -- and a long one is a track rather than a sample.
+                local usable = type(duration) == "number"
+                    and duration >= CONFIG.test_min_seconds
+                    and duration <= CONFIG.test_max_seconds
+                    and looping ~= true
+
+                if usable then
+                    samples[class_name] = wave
+                    vlog("sample for %s: %s (%.1fs)", class_name,
+                         wave:GetFullName(), duration)
+                end
+            end
+        end
+    end
+
+    local found = 0
+    for _ in pairs(samples) do found = found + 1 end
+    log("found %d of %d test samples", found, #CONFIG.test_classes)
+    return samples
+end
+
+-- Must already be on the game thread.
+local function play_samples(why)
+    if not CONFIG.test_sounds then return end
+
+    local statics = StaticFindObject("/Script/Engine.Default__GameplayStatics")
+    if not valid(statics) then
+        log("GameplayStatics unavailable, cannot play samples")
+        return
+    end
+
+    local world
+    pcall(function() world = UEHelpers.GetWorld() end)
+    if not valid(world) then
+        pcall(function() world = UEHelpers.GetPlayerController() end)
+    end
+    if not valid(world) then
+        log("no world context, cannot play samples")
+        return
+    end
+
+    local played = 0
+    for _, class_name in ipairs(CONFIG.test_classes) do
+        local wave = find_samples()[class_name]
+        if valid(wave) then
+            -- bIsUISound false so it routes normally. A UI sound would dodge
+            -- the very stages this is meant to demonstrate.
+            local ok = pcall(function()
+                statics:PlaySound2D(world, wave, 1.0, 1.0, 0.0, nil, nil, false)
+            end)
+            if ok then played = played + 1 end
+        end
+    end
+
+    if played > 0 then
+        log("played %d sample(s), %s", played, why)
+    else
+        log("no samples to play. They are found from loaded sounds, so this")
+        log("  works better in a race than in a menu.")
+    end
+end
+
 local function apply_one(key)
     -- Touching a slider means the user wants our mix, so it re-engages the
     -- verify pass and lifts bypass rather than fighting them.
@@ -1260,6 +1365,9 @@ local function panel_action(id)
             apply_now()
             log("bypass off")
         end
+        -- After the switch, so the samples demonstrate whichever mix is now in
+        -- effect rather than the one being left behind.
+        play_samples(model.bypassed and "game's own mix" or "your mix")
     end
 end
 
