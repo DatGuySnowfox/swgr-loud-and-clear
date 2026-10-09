@@ -196,13 +196,13 @@ local CONFIG = {
     -- Sound class volume has no such ceiling, which is how dialogue reaches
     -- 1.7x. An earlier version of this offered one lumped SC_SFX slider,
     -- because the README's class tree lists 14 classes and none of them covered
-    -- engines or ambience. Ctrl+F11 on a live race showed the game actually
+    -- engines or ambience. The live class report showed the game actually
     -- uses 30, including SC_Vehicles, SC_VehicleInAir, SC_Ambience,
     -- SC_Crashing and SC_Overtakes. So these get a slider each.
     --
     -- SC_SFX is deliberately not in this list. Gain on a parent is inherited,
     -- and it is very likely the parent of these, so boosting both would
-    -- multiply. Ctrl+F11 lists every class in use if you want to add others.
+    -- multiply. Ctrl+END lists every class in use if you want to add others.
     --
     -- 1.0 is off. Ctrl+PageUp and Ctrl+PageDown nudge the whole set at once.
     --
@@ -241,7 +241,7 @@ local CONFIG = {
     -- What a Compare toggle plays, together. Sound classes, not submixes:
     -- SoundSubmixObject is set on two sounds in the entire game, so matching on
     -- it found nothing. These names are measured from a live race with
-    -- Ctrl+F11, not taken from the class tree in the README, which lists only
+    -- Ctrl+END, not taken from the class tree in the README, which lists only
     -- about half of what the game actually uses.
     -- Which asset to pick within a class, best first. Matched as a
     -- case-insensitive substring of the asset name. Anything matching nothing
@@ -251,16 +251,31 @@ local CONFIG = {
     -- The engine ladder is Idle, Low, Med, High, TopSpeed, so TopSpeed is the
     -- flat-out sound. Some bikes abbreviate Engine to Eng and Exhaust to Exh.
     test_prefer = {
+        -- The continuous engine note is a MetaSound, not one of the SW_ wave
+        -- loops, and its name is not known until a race loads it. These are the
+        -- plausible shapes; Ctrl+END during a race lists what is really there.
         ["SC_Vehicles"] = {
-            "Engine_TopSpeed", "Eng_TopSpeed",
-            "Engine_High", "Eng_High",
-            "Exhaust_TopSpeed", "Exh_TopSpeed",
-            "Engine_", "Eng_",
+            "LocalPlayerEngine", "PlayerEngine",
+            "Engine", "Exhaust", "Throttle", "Rev",
         },
-        ["SC_VehicleInAir"] = { "TopSpeed", "High", "Airflow" },
-        ["SC_Ambience"]     = { "Loop" },
-        ["SC_Characters"]   = { "Crowd", "Loop" },
-        ["SC_Music"]        = { "Loop", "Race" },
+        ["SC_VehicleInAir"]      = { "Airflow", "Wind", "TopSpeed", "High" },
+        ["SC_Ambience"]          = { "Bed_", "_Loop" },
+        ["SC_Characters"]        = { "Crowd", "Walla" },
+        ["SC_Characters_Vox"]    = { "Murmur", "Grumble", "Idle" },
+        ["SC_Music_Menus"]       = { "Loop" },
+        ["SC_Music_Paddock"]     = { "Loop" },
+        ["SC_Music_Cinematics"]  = { "Loop" },
+    },
+
+    -- Skipped unless a class has nothing else. Grid intros, cosmetic trails and
+    -- one-shot malfunctions are not what these channels sound like in a race,
+    -- and in the paddock they were the only vehicle candidates there were.
+    test_avoid = {
+        ["SC_Vehicles"] = {
+            "GridIntro", "Cosmetic", "Trails", "Weather", "Malfunction",
+        },
+        ["SC_Ambience"]   = { "GridIntro" },
+        ["SC_Characters"] = { "Foley" },
     },
 
     test_classes = {
@@ -1090,6 +1105,22 @@ local function find_samples()
                                 end
                             end
 
+                            -- Pushed below everything that matched a
+                            -- preference, but still usable if nothing did.
+                            local avoid = CONFIG.test_avoid[class_name]
+                            if avoid then
+                                for _, needle in ipairs(avoid) do
+                                    if lower:find(needle:lower(), 1, true) then
+                                        rank = rank + 1000
+                                        break
+                                    end
+                                end
+                            end
+
+                            -- Duration only breaks ties between real waves.
+                            -- Every MetaSound reports 9999 or 10000 seconds,
+                            -- UE's indefinite value, so among those this
+                            -- compares equal and the name preference decides.
                             local held = ranks[class_name] or math.huge
                             local better = rank < held
                                 or (rank == held
@@ -1894,7 +1925,11 @@ RegisterConsoleCommandHandler("lac_sounds", function()
 end)
 
 -- No console by default, so the same report is on a key.
-RegisterKeyBindAsync(Key.F11, { ModifierKey.CONTROL }, function()
+--
+-- Not F11: the game uses it to toggle fullscreen and the modifier does not stop
+-- that reaching it, so Ctrl+F11 changed resolution every time. F12 is Steam's
+-- screenshot key for the same reason. END is unclaimed by both.
+RegisterKeyBindAsync(Key.END, { ModifierKey.CONTROL }, function()
     ExecuteInGameThread(report_sounds)
 end)
 
