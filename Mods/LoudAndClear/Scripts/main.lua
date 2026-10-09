@@ -208,13 +208,16 @@ local CONFIG = {
     boost_step = 0.05,
     boost_ceiling = 2.0,
 
-    -- Play a sample through each of these when Bypass is toggled, so there is
-    -- something to judge when the game is quiet. Samples are found at runtime
-    -- by their sound class, never by asset path, so they always route through
-    -- the stage being adjusted. Set test_sounds = false to turn it off.
+    -- Toggling Bypass plays one real game sound through every channel the panel
+    -- adjusts, all at once, so the two mixes can be compared when the game
+    -- itself is quiet. Samples are found at runtime by the submix they send to,
+    -- never by asset path: a path is a thing a patch can move, and matching by
+    -- submix guarantees the sample demonstrates the slider beside it.
+    --
+    -- They are spawned rather than fired and forgotten, so a looping engine bed
+    -- can be stopped again. Toggling Bypass again, or closing the panel, stops
+    -- them. Set test_sounds = false to turn it off.
     test_sounds = true,
-    test_classes = { "SC_Voice", "SC_SFX", "SC_Music" },
-    test_max_seconds = 5.0,
     test_min_seconds = 0.4,
 
     expected_class_volume = 1.0,
@@ -969,46 +972,74 @@ end
 -- test samples
 ----------------------------------------------------------------------
 
--- One cached SoundWave per class name, found on first use.
+-- Everything the panel adjusts, sampled at once: the seven ducked submixes plus
+-- dialogue. Matching is on the submix a sound sends to, because that is the
+-- stage the sliders move. Matching by sound class, as the first version did,
+-- demonstrates nothing about a submix slider.
 local samples = nil
+local sample_components = {}
+
+local function test_targets()
+    local list = {}
+    for _, relpath in ipairs(CONFIG.duck_order) do
+        list[#list + 1] = { key = relpath,
+                            name = relpath:match("([^/]+)$"),
+                            kind = "submix" }
+    end
+    for _, relpath in ipairs(CONFIG.voice_classes) do
+        list[#list + 1] = { key = relpath,
+                            name = relpath:match("([^/]+)$"),
+                            kind = "class" }
+    end
+    return list
+end
 
 local function find_samples()
     if samples then return samples end
     samples = {}
 
-    local wanted = {}
-    for _, name in ipairs(CONFIG.test_classes) do wanted[name] = true end
-
-    local ok, waves = pcall(FindAllOf, "SoundWave")
-    if not ok or not waves then
-        log("no sound waves loaded yet, so there is nothing to sample")
-        return samples
+    local by_submix, by_class = {}, {}
+    for _, target in ipairs(test_targets()) do
+        if target.kind == "submix" then by_submix[target.name] = target.key
+        else by_class[target.name] = target.key end
     end
 
-    for _, wave in ipairs(waves) do
-        if valid(wave) then
-            local class_name
-            pcall(function()
-                local sc = wave.SoundClassObject
-                if valid(sc) then class_name = sc:GetFName():ToString() end
-            end)
+    -- Cues before waves: a SoundWave usually has no routing of its own, the cue
+    -- that plays it carries it.
+    local scanned, routed = 0, 0
+    for _, kind in ipairs({ "SoundCue", "SoundWave" }) do
+        local ok, sounds = pcall(FindAllOf, kind)
+        if ok and sounds then
+            for _, sound in ipairs(sounds) do
+                if valid(sound) then
+                    scanned = scanned + 1
 
-            if class_name and wanted[class_name] and not samples[class_name] then
-                local duration, looping
-                pcall(function() duration = wave.Duration end)
-                pcall(function() looping = wave.bLooping end)
+                    local submix_name, class_name
+                    pcall(function()
+                        local sm = sound.SoundSubmixObject
+                        if valid(sm) then submix_name = sm:GetFName():ToString() end
+                    end)
+                    pcall(function()
+                        local sc = sound.SoundClassObject
+                        if valid(sc) then class_name = sc:GetFName():ToString() end
+                    end)
+                    if submix_name or class_name then routed = routed + 1 end
 
-                -- A looping wave would play forever with nothing to stop it,
-                -- and a long one is a track rather than a sample.
-                local usable = type(duration) == "number"
-                    and duration >= CONFIG.test_min_seconds
-                    and duration <= CONFIG.test_max_seconds
-                    and looping ~= true
+                    local key = (submix_name and by_submix[submix_name])
+                             or (class_name and by_class[class_name])
 
-                if usable then
-                    samples[class_name] = wave
-                    vlog("sample for %s: %s (%.1fs)", class_name,
-                         wave:GetFullName(), duration)
+                    if key and not samples[key] then
+                        local duration
+                        pcall(function() duration = sound.Duration end)
+                        -- Loops are fine now that these are stoppable, but a
+                        -- silent or absurdly long asset still is not a sample.
+                        if type(duration) == "number"
+                           and duration >= CONFIG.test_min_seconds then
+                            samples[key] = sound
+                            log("  sample for %-44s %s", key,
+                                (sound:GetFullName() or ""):match("([^.]+)$") or "?")
+                        end
+                    end
                 end
             end
         end
@@ -1016,13 +1047,33 @@ local function find_samples()
 
     local found = 0
     for _ in pairs(samples) do found = found + 1 end
-    log("found %d of %d test samples", found, #CONFIG.test_classes)
+    log("found %d of %d samples (%d sounds scanned, %d had routing)",
+        found, #test_targets(), scanned, routed)
+    if found == 0 then
+        log("  nothing matched. lac_sounds lists the submixes and classes the")
+        log("  loaded sounds actually use, which is how to fix this.")
+    end
     return samples
+end
+
+-- Stopped on the next toggle and on panel close, which is the whole reason
+-- these are spawned rather than fired and forgotten.
+local function stop_samples()
+    local stopped = 0
+    for _, component in ipairs(sample_components) do
+        if valid(component) then
+            if pcall(function() component:Stop() end) then stopped = stopped + 1 end
+        end
+    end
+    sample_components = {}
+    return stopped
 end
 
 -- Must already be on the game thread.
 local function play_samples(why)
     if not CONFIG.test_sounds then return end
+
+    stop_samples()
 
     local statics = StaticFindObject("/Script/Engine.Default__GameplayStatics")
     if not valid(statics) then
@@ -1040,24 +1091,30 @@ local function play_samples(why)
         return
     end
 
+    local found = find_samples()
     local played = 0
-    for _, class_name in ipairs(CONFIG.test_classes) do
-        local wave = find_samples()[class_name]
-        if valid(wave) then
-            -- bIsUISound false so it routes normally. A UI sound would dodge
-            -- the very stages this is meant to demonstrate.
-            local ok = pcall(function()
-                statics:PlaySound2D(world, wave, 1.0, 1.0, 0.0, nil, nil, false)
+    for _, target in ipairs(test_targets()) do
+        local sound = found[target.key]
+        if valid(sound) then
+            -- SpawnSound2D hands back a component, so a looping engine bed can
+            -- be stopped again. bAutoDestroy false keeps the handle valid.
+            local ok, component = pcall(function()
+                return statics:SpawnSound2D(world, sound, 1.0, 1.0, 0.0,
+                                            nil, false, false)
             end)
-            if ok then played = played + 1 end
+            if ok and valid(component) then
+                sample_components[#sample_components + 1] = component
+                played = played + 1
+            end
         end
     end
 
     if played > 0 then
-        log("played %d sample(s), %s", played, why)
+        log("playing %d sample(s) together, %s. Toggle again or close to stop.",
+            played, why)
     else
-        log("no samples to play. They are found from loaded sounds, so this")
-        log("  works better in a race than in a menu.")
+        log("no samples to play. They come from loaded sounds, so this works in")
+        log("  a race and not in a menu.")
     end
 end
 
@@ -1112,6 +1169,10 @@ local function close_panel()
         vlog("close: hiding widget")
         old_panel:hide()
     end
+
+    -- Samples are started from the panel, so they end with it.
+    local stopped = stop_samples()
+    if stopped > 0 then vlog("close: stopped %d sample(s)", stopped) end
 
     log("panel closed")
 end
@@ -1629,6 +1690,66 @@ RegisterConsoleCommandHandler("lac_boost", function(_, parameters)
     log("world boost -> %.2fx (%+.1f dB)", wanted, 20 * math.log(wanted, 10))
     apply()
     return true
+end)
+
+-- What the loaded sounds actually route to, with counts. The README's class
+-- tree says what exists; this says what is in play, which is what decides
+-- whether a sample can be found.
+local function report_sounds()
+    local submixes, classes, total, routed = {}, {}, 0, 0
+    for _, kind in ipairs({ "SoundCue", "SoundWave" }) do
+        local ok, sounds = pcall(FindAllOf, kind)
+        if ok and sounds then
+            for _, sound in ipairs(sounds) do
+                if valid(sound) then
+                    total = total + 1
+                    local any = false
+                    pcall(function()
+                        local sm = sound.SoundSubmixObject
+                        if valid(sm) then
+                            local n = sm:GetFName():ToString()
+                            submixes[n] = (submixes[n] or 0) + 1
+                            any = true
+                        end
+                    end)
+                    pcall(function()
+                        local sc = sound.SoundClassObject
+                        if valid(sc) then
+                            local n = sc:GetFName():ToString()
+                            classes[n] = (classes[n] or 0) + 1
+                            any = true
+                        end
+                    end)
+                    if any then routed = routed + 1 end
+                end
+            end
+        end
+    end
+
+    local function dump(label, tbl)
+        local rows = {}
+        for name, n in pairs(tbl) do rows[#rows + 1] = { name = name, n = n } end
+        table.sort(rows, function(a, b) return a.n > b.n end)
+        log("%s (%d distinct):", label, #rows)
+        for i = 1, math.min(#rows, 20) do
+            log("   %-34s %d", rows[i].name, rows[i].n)
+        end
+        if #rows == 0 then log("   none") end
+    end
+
+    log("%d sounds loaded, %d carry routing", total, routed)
+    dump("submixes in use", submixes)
+    dump("sound classes in use", classes)
+end
+
+RegisterConsoleCommandHandler("lac_sounds", function()
+    ExecuteInGameThread(report_sounds)
+    return true
+end)
+
+-- No console by default, so the same report is on a key.
+RegisterKeyBindAsync(Key.F11, { ModifierKey.CONTROL }, function()
+    ExecuteInGameThread(report_sounds)
 end)
 
 RegisterConsoleCommandHandler("lac_cutscene", function()
