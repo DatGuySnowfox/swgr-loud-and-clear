@@ -1363,6 +1363,21 @@ local function find_samples()
     end
     log("found %d of %d samples (%d sounds scanned, %d carried a class)",
         found, #test_targets(), scanned, routed)
+
+    -- Name what is missing rather than leaving a count to be interpreted. Most
+    -- of the time the answer is simply where you are: the main menu loads
+    -- almost nothing, the paddock has no engine or race music, and a race has
+    -- the lot. A silent channel in the test is usually that, not a fault.
+    local missing = {}
+    for _, class_name in ipairs(test_targets()) do
+        if not samples[class_name] then missing[#missing + 1] = class_name end
+    end
+    if #missing > 0 then
+        log("  not loaded here: %s", table.concat(missing, ", "))
+        log("  that is usually the area, not a fault. A race loads the most,")
+        log("  the paddock less, the main menu least.")
+    end
+
     if found == 0 then
         log("  nothing matched. lac_sounds lists the submixes and classes the")
         log("  loaded sounds actually use, which is how to fix this.")
