@@ -181,6 +181,33 @@ local CONFIG = {
     -- builds. So a capture that is not 1.0 is far more likely to be our own
     -- output than a real change. Refuse it loudly rather than compounding. If a
     -- patch genuinely rebalances the mix, the log says so and this gets updated.
+    -- EXPERIMENTAL. Sound classes to make louder, as a multiplier.
+    --
+    -- This is the only way anything gets louder in this game, and it is coarse.
+    -- Ducking is per submix because a control bus has 60 dB of cut available.
+    -- Boosting a submix is impossible: the bus parameter has MinVolume = -60 and
+    -- no MaxVolume, so 0 dB is unity and the ceiling at once, and a positive
+    -- request normalises above 1.0 and comes back as unity. Silently.
+    --
+    -- Sound class volume has no such ceiling, which is how dialogue reaches
+    -- 1.7x. But there are no classes for engines, ambience, crowds or airflow;
+    -- those exist only as submixes. SC_SFX is the one class that covers them,
+    -- and it covers all of them together along with impacts and world sound.
+    --
+    -- So this is one slider for the whole world, not one per channel. 1.0 is
+    -- off. Ctrl+PageUp and Ctrl+PageDown nudge it live so it can be judged by
+    -- ear, which is the only way to judge it.
+    --
+    -- Headroom warning: dialogue is already at 1.7x. Pushing this up as well
+    -- makes the mix hot and the limiter audible. boost_ceiling is where it
+    -- stops.
+    boost = {
+        ["Classes/SC_SFX"] = 1.0,
+    },
+    boost_order = { "Classes/SC_SFX" },
+    boost_step = 0.05,
+    boost_ceiling = 2.0,
+
     expected_class_volume = 1.0,
     baseline_tolerance = 0.01,
 
@@ -209,8 +236,9 @@ local CONFIG = {
 -- The values above, captured before load_settings() overwrites them. "Mod
 -- defaults" has to mean the shipped mix, and once a settings file has been read
 -- CONFIG no longer knows what that was.
-local DEFAULTS = { class_boost = CONFIG.class_boost, duck = {} }
+local DEFAULTS = { class_boost = CONFIG.class_boost, duck = {}, boost = {} }
 for relpath, value in pairs(CONFIG.duck) do DEFAULTS.duck[relpath] = value end
+for relpath, value in pairs(CONFIG.boost) do DEFAULTS.boost[relpath] = value end
 
 ----------------------------------------------------------------------
 -- plumbing
@@ -357,6 +385,11 @@ local function load_settings()
                         CONFIG.duck[relpath] = number
                         count = count + 1
                     end
+                    local boosted = key:match("^boost:(.+)$")
+                    if boosted and CONFIG.boost[boosted] ~= nil then
+                        CONFIG.boost[boosted] = number
+                        count = count + 1
+                    end
                 end
             end
         end
@@ -377,6 +410,11 @@ local function save_settings()
     for _, relpath in ipairs(CONFIG.duck_order) do
         if CONFIG.duck[relpath] then
             handle:write(string.format("duck:%s=%.4f\n", relpath, CONFIG.duck[relpath]))
+        end
+    end
+    for _, relpath in ipairs(CONFIG.boost_order) do
+        if CONFIG.boost[relpath] then
+            handle:write(string.format("boost:%s=%.4f\n", relpath, CONFIG.boost[relpath]))
         end
     end
     handle:close()
@@ -677,6 +715,18 @@ local function apply_now()
         end
     end
 
+    -- Same mechanism, different classes. Skipped entirely at 1.0 so the feature
+    -- costs nothing until someone turns it up.
+    for _, relpath in ipairs(CONFIG.boost_order) do
+        local multiplier = CONFIG.boost[relpath]
+        if multiplier and multiplier ~= 1.0 then
+            class_attempted = class_attempted + 1
+            if set_class_multiplier(relpath, multiplier) then
+                classes = classes + 1
+            end
+        end
+    end
+
     log("applied: %d/%d buses ducked, %d/%d class volumes boosted",
         buses, bus_attempted, classes, class_attempted)
 
@@ -742,6 +792,26 @@ local function verify()
                             relpath, want, actual)
                         set_class_multiplier(relpath, CONFIG.class_boost)
                     end
+                end
+            end
+        end
+    end
+
+    for _, relpath in ipairs(CONFIG.boost_order) do
+        local multiplier = CONFIG.boost[relpath]
+        local authored = class_baseline[relpath]
+        local class = authored and resolve(relpath)
+        if multiplier and multiplier ~= 1.0 and authored and class then
+            local want = authored * multiplier
+            local actual
+            pcall(function() actual = class.Properties.Volume end)
+            if type(actual) == "number" then
+                checked = checked + 1
+                if math.abs(actual - want) > 0.0005 then
+                    drifted = drifted + 1
+                    log("drift on %s: expected %.3f, found %.3f. Re-applying.",
+                        relpath, want, actual)
+                    set_class_multiplier(relpath, multiplier)
                 end
             end
         end
@@ -1084,6 +1154,9 @@ end
 local function adopt(source)
     CONFIG.class_boost = source.class_boost
     for relpath, value in pairs(source.duck) do CONFIG.duck[relpath] = value end
+    if source.boost then
+        for relpath, value in pairs(source.boost) do CONFIG.boost[relpath] = value end
+    end
     snapshot(model)
     if panel then panel:write(model, CONFIG.duck_order) end
     applied = true
@@ -1295,6 +1368,48 @@ RegisterKeyBindAsync(Key.F9, { ModifierKey.CONTROL }, function() reset() end)
 -- anyone who does not have the console turned on.
 RegisterKeyBindAsync(Key.F10, { ModifierKey.CONTROL }, function() report_cutscene() end)
 
+-- EXPERIMENTAL world boost, judged by ear.
+--
+-- Nudges CONFIG.boost's first entry, which is SC_SFX: engines, ambience,
+-- impacts and world sound, all together, because there is no sound class that
+-- separates them. Clamped at boost_ceiling because dialogue is already at 1.7x
+-- and stacking boosts makes the limiter audible.
+--
+-- Not saved automatically. Save in the panel keeps it, or edit CONFIG.
+local function nudge_boost(delta)
+    local relpath = CONFIG.boost_order[1]
+    if not relpath then return end
+
+    local current = CONFIG.boost[relpath] or 1.0
+    local target = math.max(1.0, math.min(CONFIG.boost_ceiling, current + delta))
+    target = math.floor(target * 100 + 0.5) / 100
+
+    if math.abs(target - current) < 0.0001 then
+        log("world boost is already at %.2fx, its %s", current,
+            delta > 0 and "ceiling" or "floor")
+        return
+    end
+
+    CONFIG.boost[relpath] = target
+    log("world boost %.2fx -> %.2fx (%+.1f dB on %s)",
+        current, target, 20 * math.log(target, 10), relpath:match("([^/]+)$"))
+    if target == 1.0 then
+        log("  back to the game's own level. Reset with Ctrl+F9 if it still")
+        log("  sounds lifted: returning to 1.0 does not restore the class until")
+        log("  the next apply.")
+    end
+    apply()
+end
+
+-- pcall because a UE4SS build that names these keys differently should not stop
+-- the rest of the mod loading.
+pcall(function()
+    RegisterKeyBindAsync(Key.PAGE_UP, { ModifierKey.CONTROL },
+        function() nudge_boost(CONFIG.boost_step) end)
+    RegisterKeyBindAsync(Key.PAGE_DOWN, { ModifierKey.CONTROL },
+        function() nudge_boost(-CONFIG.boost_step) end)
+end)
+
 RegisterConsoleCommandHandler("lac_apply", function() apply() return true end)
 RegisterConsoleCommandHandler("lac_dump", function() dump() return true end)
 RegisterConsoleCommandHandler("lac_reset", function() reset() return true end)
@@ -1327,6 +1442,23 @@ end)
 -- Run this during a cutscene. If it reports playing = false while one is
 -- obviously on screen, the panel's cutscene guard cannot see this game's
 -- cinematics and that needs knowing before trusting it.
+-- lac_boost 1.25, or lac_boost with no argument to report the current value.
+RegisterConsoleCommandHandler("lac_boost", function(_, parameters)
+    local relpath = CONFIG.boost_order[1]
+    local current = CONFIG.boost[relpath] or 1.0
+    local wanted = tonumber(parameters[1])
+    if not wanted then
+        log("world boost is %.2fx on %s. Pass a multiplier between 1.0 and %.2f.",
+            current, relpath, CONFIG.boost_ceiling)
+        return true
+    end
+    wanted = math.max(1.0, math.min(CONFIG.boost_ceiling, wanted))
+    CONFIG.boost[relpath] = wanted
+    log("world boost -> %.2fx (%+.1f dB)", wanted, 20 * math.log(wanted, 10))
+    apply()
+    return true
+end)
+
 RegisterConsoleCommandHandler("lac_cutscene", function()
     report_cutscene()
     return true
