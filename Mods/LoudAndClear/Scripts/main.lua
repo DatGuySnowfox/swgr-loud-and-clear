@@ -1891,8 +1891,12 @@ local function report_sounds()
         local rows = {}
         for name, n in pairs(tbl) do rows[#rows + 1] = { name = name, n = n } end
         table.sort(rows, function(a, b) return a.n > b.n end)
+        -- No cap. It was 20, then 40, and both truncated: the paddock has 30
+        -- classes and a race has 49, so any fixed number hides the ones that
+        -- only appear somewhere you have not looked yet. That is exactly how
+        -- SC_LocalPlayerEngine stayed hidden through four rounds of tuning.
         log("%s (%d distinct):", label, #rows)
-        for i = 1, math.min(#rows, 40) do
+        for i = 1, #rows do
             log("   %-34s %d", rows[i].name, rows[i].n)
         end
         if #rows == 0 then log("   none") end
@@ -1939,7 +1943,7 @@ local function report_sounds()
         local picked_name = picked
             and ((picked:GetFullName() or ""):match("([^.]+)$") or "?") or nil
         log("%s: %d candidate(s)", class_name, #rows)
-        for i = 1, math.min(#rows, 10) do
+        for i = 1, math.min(#rows, 25) do
             log("   %s %-52s %s",
                 rows[i].asset == picked_name and "->" or "  ",
                 rows[i].asset, rows[i].kind)
