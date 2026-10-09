@@ -1448,6 +1448,17 @@ local function play_samples(why)
             if ok and valid(component) then
                 sample_components[#sample_components + 1] = component
                 played = played + 1
+
+                -- Spawned is not the same as sounding. Eight samples once
+                -- spawned and three were audible, the rest being parameterised
+                -- MetaSound shells that produce silence, and the log reported
+                -- all eight as played. So each one is asked directly.
+                local sounding = "?"
+                pcall(function()
+                    sounding = tostring(component:IsPlaying())
+                end)
+                local asset = (sound:GetFullName() or ""):match("([^.]+)$") or "?"
+                log("  %-22s %-46s playing=%s", class_name, asset, sounding)
             end
         end
     end
