@@ -165,6 +165,13 @@ function Panel.create(controller, model, order, focusable, boost_order)
         head:AddChildToHorizontalBox(value):SetSize({ SizeRule = 1, Value = 1 })
         add(head, 22, 2)
 
+        -- What a probe on these reported, kept because it explains the shape
+        -- of the code above. SetMinValue and SetMaxValue do take: a 1.0 to 3.0
+        -- slider read back MinValue=1.0 MaxValue=3.0. But Value stayed at
+        -- 0.0000, outside its own range, because SetMinValue does not drag the
+        -- current value up with it. Panel:write calls SetValue on open, which
+        -- is what rescues the duck and voice sliders. MouseUsesStep was false
+        -- throughout, so StepSize never affected dragging.
         local control = make("Slider")
         if normalised then
             -- Left on the default 0..1. self.scale carries the real range and
@@ -184,23 +191,6 @@ function Panel.create(controller, model, order, focusable, boost_order)
 
         self.sliders[key] = control
         self.values[key] = { widget = value, format = readout }
-
-        -- Read the range back rather than trusting the setters. The boost
-        -- slider only travelled 0.01 and the duck sliders are fine, so the
-        -- difference is worth seeing rather than guessing at.
-        local function peek(name)
-            local ok, v = pcall(function() return control[name] end)
-            if not ok then return "<err>" end
-            if type(v) == "number" then return string.format("%.4f", v) end
-            return tostring(v)
-        end
-        print(string.format(
-            "[LoudAndClear] slider %s: asked min=%.2f max=%.2f step=%.2f | "
-            .. "reads MinValue=%s MaxValue=%s StepSize=%s Value=%s "
-            .. "MouseUsesStep=%s Locked=%s\n",
-            key, minimum, maximum, step,
-            peek("MinValue"), peek("MaxValue"), peek("StepSize"),
-            peek("Value"), peek("MouseUsesStep"), peek("Locked")))
     end
 
     add(label("DIALOGUE", 13, MUTED), 18, 4)

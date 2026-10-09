@@ -135,15 +135,20 @@ local CONFIG = {
     -- Whether the panel refuses to open during a cutscene, and closes itself if
     -- one starts while it is open.
     --
-    -- This is containment, not the fix. The fix is in Panel.lua: the host no
-    -- longer instantiates a game blueprint. With the guard on, the panel is
-    -- never open during a cutscene, which also means the fix never gets tested,
-    -- because the crash needs the panel open during one.
+    -- OFF, because it cannot tell a cutscene from scenery. The paddock runs an
+    -- ambient idle animation through a LevelSequencePlayer with LoopCount 0,
+    -- which is indistinguishable from a cutscene by every property tried, so
+    -- the guard blocked the panel for the whole of that area. Two attempts at a
+    -- discriminator failed: any playing sequence, then any non-looping one.
     --
-    -- So: leave it true for normal use. Set it false only to deliberately test
-    -- whether the host rebuild holds, knowing that is the exact condition that
-    -- used to take the game down. Save your progress first.
-    cutscene_guard = true,
+    -- It was containment for a crash whose actual cause has since been removed.
+    -- The panel no longer borrows a game blueprint for its widget tree, and the
+    -- rebuilt host survived eight opens inside a real cutscene. Keeping a guard
+    -- that reliably breaks a hub area, to mitigate a risk that was fixed
+    -- properly somewhere else, is the wrong trade.
+    --
+    -- Set true if you would rather have it. Ctrl+F10 reports what it can see.
+    cutscene_guard = false,
 
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,
