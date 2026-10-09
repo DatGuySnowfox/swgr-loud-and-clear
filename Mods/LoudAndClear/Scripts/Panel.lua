@@ -237,11 +237,12 @@ function Panel.create(controller, model, order, focusable, pair)
     add(values_row, 32, 5)
 
     local mode_row = make("HorizontalBox")
+    button("test", "Play test", mode_row)
     button("bypass", "Compare", mode_row)
     button("close", "Close", mode_row)
     add(mode_row, 32, 4)
 
-    add(label("Drag a slider, or click a button. HOME closes.", 12, MUTED), 17, 1)
+    add(label("Play test, then drag. Replay it to hear a raise.", 12, MUTED), 17, 1)
     add(label("Saved values load automatically next launch.", 12, MUTED), 17, 0)
 
     slot:SetSize({ X = self.width, Y = self.height })
@@ -379,6 +380,14 @@ function Panel:update(model, order, dirty)
         if button.id == "bypass" then
             button.caption:SetText(FText(
                 model.bypassed and "Compare: game mix" or "Compare: your mix"))
+        end
+
+        -- Says what pressing it will do. Restarting the samples is also how a
+        -- boost becomes audible, so this is the button people will press most.
+        if button.id == "test" then
+            local playing = false
+            pcall(function() playing = samples_playing() end)
+            button.caption:SetText(FText(playing and "Stop test" or "Play test"))
         end
 
         local active = index == model.selection or button.control:IsHovered()

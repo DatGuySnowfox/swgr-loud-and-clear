@@ -1253,6 +1253,15 @@ local function find_samples()
     return samples
 end
 
+-- True while spawned samples are sounding, so the panel's Test button can say
+-- which way it will go.
+function samples_playing()
+    for _, component in ipairs(sample_components) do
+        if valid(component) then return true end
+    end
+    return false
+end
+
 -- Dropping the cache makes the next toggle re-pick from whatever is loaded now.
 function forget_samples()
     samples = nil
@@ -1641,6 +1650,17 @@ local function panel_action(id)
     -- called Bypass until it also started playing a sample through every
     -- channel, at which point it stopped being an off switch and became an A/B
     -- test, and "Bypass: off" read as though it disabled the comparison.
+    -- Restarting the samples is how a class boost becomes audible: the class
+    -- is sampled when a sound starts, so anything already playing is deaf to a
+    -- change you just made.
+    elseif id == "test" then
+        if samples_playing() then
+            local stopped = stop_samples()
+            log("test: stopped %d sample(s)", stopped)
+        else
+            play_samples("on demand")
+        end
+
     elseif id == "bypass" then
         model.bypassed = not model.bypassed
         if model.bypassed then
