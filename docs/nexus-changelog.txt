@@ -1,18 +1,14 @@
 1.2.0
 
-Fixed: the mix panel could freeze the game during a cutscene. It borrowed one of the game's own widget blueprints to get a widget tree, which left a live blueprint instance running its graph every frame against a tree it no longer recognised. It now builds its own widget from engine classes only.
-Added: the panel refuses to open while a cutscene is playing, and closes itself if one starts. Set cutscene_guard = false in CONFIG to turn that off.
-New: an in-game mix panel on HOME. Nine sliders, voice level and the seven channels competing with it, each with a live dB readout, all applied as you drag.
-New: Save, Undo, Mod defaults, and a Bypass toggle for comparing against the game's own mix.
-New: panel settings are saved and reloaded on the next launch, so tuning no longer means editing the Lua by hand.
-Added: Ctrl+F10 and lac_cutscene report whether a cutscene is currently detected.
-Fixed: dialogue could end up louder than you asked for, because a reload could read the mod's own boosted output back as the game's original level and boost it again.
-Fixed: the mod no longer scans the whole audio graph on every launch, which was several hundred object lookups for information that is now written down.
-Fixed: the panel could leave a controller with nowhere to send input, with no panel on screen. Its widget was marked focusable and closing it only hid it rather than removing it, so Slate could leave gamepad focus on a closed panel. It is only focusable now while it actually holds the cursor.
-Fixed: the nine sliders could not be moved. They are dragged with the mouse, and the panel was not taking the cursor, so there was no way to touch them.
-Changed: the mod no longer binds the arrow keys or Enter. A UE4SS keybind cannot be released once registered, so those were permanent hooks on gameplay keys for the whole session.
-Changed: the download no longer bundles the UE4SS signature files. They are UE4SS configuration rather than mod files, and shipping them invited overwriting a working setup. They are in the GitHub repo for anyone who needs them.
-Compatible with the 8 October game patch, build 25801363, which moved two of the addresses UE4SS uses to find the engine. Replacement signature files are in the repo under Signatures/.
+New: an in-game mix panel on HOME. Nine sliders, voice level and the seven channels competing with it, each with a live dB readout. Drag with the mouse and you hear every change while you make it.
+New: Save, Undo, Mod defaults, and a Bypass toggle for comparing your mix against the game's own by ear.
+New: your settings are saved and reloaded on the next launch, so tuning no longer means editing the Lua by hand.
+New: the panel stays shut during cutscenes, and closes itself if one starts while it is open. Set cutscene_guard = false in CONFIG if you would rather it did not.
+New: Ctrl+F10 and the lac_cutscene command report whether a cutscene is currently detected.
+Fixed: dialogue could end up louder than you set it. Under some reload conditions the mod read its own boosted output back as the game's original level and boosted it again, compounding each time. It now refuses to record a value that is not the authored one, and says so in the log.
+Fixed: the mod no longer scans the whole audio graph on every launch. That was several hundred object lookups at startup for information that is now written down.
+Compatible with the 8 October game patch, build 25801363, which moved two of the addresses UE4SS uses to find the engine. If UE4SS started crashing for you after that patch, replacement signature files are in the GitHub repo under Signatures/.
+Changed: the download no longer bundles the UE4SS signature files. They are UE4SS configuration rather than mod files, and shipping them invited overwriting a working setup that never needed touching. They are in the repo for anyone who needs them.
 
 1.0.0
 
