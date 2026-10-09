@@ -143,7 +143,19 @@ local CONFIG = {
     -- So: leave it true for normal use. Set it false only to deliberately test
     -- whether the host rebuild holds, knowing that is the exact condition that
     -- used to take the game down. Save your progress first.
-    cutscene_guard = true,
+    -- OFF. It was true in 1.2.0 and that was a mistake: the guard counts any
+    -- playing level sequence as a cutscene, and this game runs ambient idle
+    -- animations through the same system. In the paddock one of those plays
+    -- constantly, so the panel could not be opened there at all, and the
+    -- refusal is only logged once so it looked like a dead key.
+    --
+    -- The crash it was written to contain was fixed properly in 1.2.0 by
+    -- rebuilding the panel host so it no longer instantiates a game blueprint.
+    -- That fix was tested with this guard deliberately off, through eight opens
+    -- inside a real cutscene. The guard was belt and braces and the belt holds.
+    --
+    -- Set true if you would rather have it.
+    cutscene_guard = false,
 
     -- Submix relpath -> the bus that drives its gain. A lookup table, not a
     -- target list: entries here are only acted on if they appear in duck above,

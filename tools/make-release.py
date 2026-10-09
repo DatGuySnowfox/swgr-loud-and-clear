@@ -47,12 +47,19 @@ The panel now builds its own widget from engine classes only and touches no
 blueprint at all. It has been tested with the panel deliberately opened and
 closed eight times during a cutscene, which is what used to kill it.
 
-The second guard: the panel also refuses to open while a cutscene is playing,
-and closes itself if one starts while it is open. So even if some case was
-missed, the panel is not on screen during the risky moment. If you would rather
-it did not do that, set this in the CONFIG block at the top of Scripts\\main.lua:
+There is also an optional cutscene guard, and in 1.2.1 it ships OFF. It keeps
+the panel shut while a cutscene plays, which sounds sensible, but it counts any
+playing level sequence as a cutscene and this game runs ambient idle animations
+through the same system. In the paddock one of those plays constantly, so in
+1.2.0 the panel could not be opened there at all, and the refusal is only
+logged once so HOME looked like a dead key. That is what 1.2.1 fixes.
 
-    cutscene_guard = false,
+The crash it was written to contain was already fixed properly, by rebuilding
+the panel host, and that fix was tested with this guard deliberately off through
+eight opens inside a real cutscene. If you would rather have the guard anyway,
+set this in the CONFIG block at the top of Scripts\\main.lua:
+
+    cutscene_guard = true,
 
 And to remove the panel and its timer entirely, keeping the mix:
 
