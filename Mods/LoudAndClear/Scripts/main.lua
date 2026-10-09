@@ -331,6 +331,10 @@ local CONFIG = {
         ["SC_Ambience"]          = { "Bed_", "_Loop" },
         ["SC_Characters"]        = { "Crowd", "Walla" },
         ["SC_Characters_Vox"]    = { "Murmur", "Grumble", "Idle" },
+        -- Prefer something with words in it over a grunt, so the voice slider
+        -- is judged on speech rather than on a scream.
+        ["SC_DiegeticVoice"]     = { "Line", "Dialogue", "Conversation", "Vox" },
+        ["SC_NonDiegeticVoice"]  = { "Commentary", "Announcer", "Line", "Vox" },
         ["SC_Music_Menus"]       = { "Loop" },
         ["SC_Music_Paddock"]     = { "Loop" },
         ["SC_Music_Cinematics"]  = { "Loop" },
@@ -356,6 +360,13 @@ local CONFIG = {
         "SC_Ambience",
         "SC_Characters",        -- crowds and world characters
         "SC_Characters_Vox",    -- dialogue
+        -- The Voice level slider boosts SC_Voice and SC_Characters_Vox, and
+        -- these two are children of SC_Voice so they inherit it. Added so the
+        -- voice slider can be heard: a sample starts fresh, and sound class
+        -- volume is sampled at sound start, so a sample always reflects the
+        -- current boost even when a continuous bed would not.
+        "SC_DiegeticVoice",
+        "SC_NonDiegeticVoice",
         -- There is no plain SC_Music in this game. The live class report
         -- lists SC_Music_Cinematics, SC_Music_Menus and SC_Music_Paddock,
         -- which is why the set kept coming back one short.
