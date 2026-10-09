@@ -1309,6 +1309,11 @@ local function play_samples(why)
     end
 end
 
+-- Class volume writes are held until a drag settles. See the note on
+-- flush_pending_boost.
+local pending_boost = {}
+local pending_idle = 0
+
 local function apply_one(key)
     -- Touching a slider means the user wants our mix, so it re-engages the
     -- verify pass and lifts bypass rather than fighting them.
@@ -1321,8 +1326,14 @@ local function apply_one(key)
             set_class_multiplier(relpath, CONFIG.class_boost)
         end
     elseif CONFIG.boost[key] ~= nil then
+        -- Deferred, not written now. Writing sound class volume ten times a
+        -- second while a slider moves makes the audio drop out, because the
+        -- class is sampled when a sound starts and re-evaluating mid-playback
+        -- interrupts what is already sounding. Buses do not have this problem,
+        -- which is why the cut half of the same slider is smooth.
         CONFIG.boost[key] = model.boost[key]
-        set_class_multiplier(key, model.boost[key])
+        pending_boost[key] = model.boost[key]
+        pending_idle = 0
     else
         CONFIG.duck[key] = model.duck[key]
         set_bus_multiplier(key, model.duck[key])
@@ -1635,6 +1646,24 @@ local function panel_action(id)
     end
 end
 
+-- Called from the panel loop. Writes the held class volumes once the sliders
+-- have been still for a few ticks, so a drag produces one write rather than
+-- thirty.
+local function flush_pending_boost()
+    if next(pending_boost) == nil then return end
+
+    pending_idle = pending_idle + 1
+    if pending_idle < 4 then return end          -- about 400 ms at 10 Hz
+
+    local count = 0
+    for key, value in pairs(pending_boost) do
+        if set_class_multiplier(key, value) then count = count + 1 end
+    end
+    pending_boost = {}
+    pending_idle = 0
+    if count > 0 then vlog("settled %d class volume(s)", count) end
+end
+
 local function panel_process(event)
     if event == "toggle" then
         if panel then close_panel() else open_panel() end
@@ -1758,6 +1787,8 @@ panel_tick = function()
                     for _, key in ipairs(panel:read(model, CONFIG.duck_order)) do
                         apply_one(key)
                     end
+                    -- Held class writes land here, once the drag stops.
+                    flush_pending_boost()
                 end
 
                 local batch = panel_events
