@@ -1446,6 +1446,13 @@ local function play_samples(why)
                                             nil, false, false)
             end)
             if ok and valid(component) then
+                -- Play while the game is paused. The panel is usually opened
+                -- from a pause menu, and a normal sound is silenced there by
+                -- the audio device even though the component still reports
+                -- IsPlaying true. That is why every sample read as playing and
+                -- none could be heard.
+                pcall(function() component.bIsUISound = true end)
+
                 sample_components[#sample_components + 1] = component
                 played = played + 1
 
