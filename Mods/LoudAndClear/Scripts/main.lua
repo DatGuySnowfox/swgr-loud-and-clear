@@ -401,6 +401,95 @@ local CONFIG = {
     verbose = true,
 }
 
+----------------------------------------------------------------------
+-- options file
+----------------------------------------------------------------------
+
+-- Settings that are not part of the mix, kept outside the mod folder so an
+-- update cannot wipe them.
+--
+-- The mix itself was never at risk: the panel writes it to
+-- LoudAndClear-settings.txt in the same folder, and the release archive only
+-- contains enabled.txt, two Lua files and a README. But the CONFIG block above
+-- is in main.lua, which an update replaces, and the README tells people to edit
+-- it. Anyone who had set panel_grabs_input or cutscene_guard by hand lost it on
+-- every update without being told.
+--
+-- Format is one key = value per line, # for comments:
+--
+--     panel_grabs_input = false
+--     cutscene_guard = true
+--     verify_seconds = 60
+--
+-- Only numbers and booleans. The tables are excluded on purpose: duck, boost
+-- and pair are the mix, they persist through the settings file already, and a
+-- stale options file naming a submix this build no longer has would fail in a
+-- quiet and confusing way.
+local OPTIONS_FILE = (function()
+    local localappdata = os.getenv("LOCALAPPDATA")
+    if localappdata then
+        return localappdata .. "/StarWarsGalacticRacer/Saved/LoudAndClear-options.txt"
+    end
+    return "LoudAndClear-options.txt"
+end)()
+
+local OPTION_KEYS = {
+    panel_enabled = "boolean",
+    panel_grabs_input = "boolean",
+    panel_shows_cursor = "boolean",
+    cutscene_guard = "boolean",
+    test_sounds = "boolean",
+    apply_on_start = "boolean",
+    dump_on_start = "boolean",
+    verbose = "boolean",
+    class_boost = "number",
+    verify_seconds = "number",
+    boost_step = "number",
+    boost_ceiling = "number",
+    test_min_seconds = "number",
+    expected_class_volume = "number",
+    baseline_tolerance = "number",
+}
+
+local function load_options()
+    local handle = io.open(OPTIONS_FILE, "r")
+    if not handle then return 0 end
+
+    local applied, rejected = 0, {}
+    for line in handle:lines() do
+        if not line:match("^%s*#") then
+            local key, raw = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+            if key then
+                local kind = OPTION_KEYS[key]
+                if not kind then
+                    rejected[#rejected + 1] = key
+                elseif kind == "boolean" and (raw == "true" or raw == "false") then
+                    CONFIG[key] = (raw == "true")
+                    applied = applied + 1
+                elseif kind == "number" and tonumber(raw) then
+                    CONFIG[key] = tonumber(raw)
+                    applied = applied + 1
+                else
+                    rejected[#rejected + 1] = key .. " (not a " .. kind .. ")"
+                end
+            end
+        end
+    end
+    handle:close()
+
+    -- log() is defined below this point, so these go out directly.
+    if applied > 0 then
+        print(string.format("[LoudAndClear] options: applied %d from %s\n",
+                            applied, OPTIONS_FILE))
+    end
+    for _, key in ipairs(rejected) do
+        print(string.format("[LoudAndClear] options: ignored %s\n", key))
+    end
+    return applied
+end
+
+load_options()
+
 -- The values above, captured before load_settings() overwrites them. "Mod
 -- defaults" has to mean the shipped mix, and once a settings file has been read
 -- CONFIG no longer knows what that was.
