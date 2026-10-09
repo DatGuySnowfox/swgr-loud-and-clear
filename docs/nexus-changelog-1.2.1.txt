@@ -1,0 +1,5 @@
+1.2.1
+
+Fixed: the mix panel would not open in the paddock. The cutscene guard added in 1.2.0 treats any playing level sequence as a cutscene, and this game runs ambient idle animations through the same system. One of those plays constantly in the paddock, so HOME did nothing there, and because the refusal is only written to the log once it looked like the key had stopped working. The guard now ships off. Set cutscene_guard = true in CONFIG if you want it back.
+
+Nothing else changed from 1.2.0.
