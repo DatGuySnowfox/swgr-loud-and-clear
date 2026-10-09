@@ -31,6 +31,15 @@
 local UEHelpers = require("UEHelpers")
 
 local CONTENT = "/Game/Griffin/Audio/Mixing/"
+
+-- Whether resolve() may pull a missing asset in. False until the first apply has
+-- landed, and false again across a level change.
+--
+-- LoadAsset during startup is the same class of mistake as FindAllOf on a timer,
+-- which faulted inside UE4SS.dll earlier. resolve() is called from the startup
+-- polling loop, so an ungated version called it repeatedly while the engine was
+-- still coming up. A Fatal Error at launch appeared immediately afterwards.
+local load_allowed = false
 local TAG = "[LoudAndClear] "
 
 ----------------------------------------------------------------------
@@ -570,6 +579,9 @@ local function resolve(relpath)
     local ok, obj = pcall(StaticFindObject, path)
     if ok and valid(obj) then return obj, path end
 
+    -- Only in steady state. See load_allowed.
+    if not load_allowed then return nil, path end
+
     local loaded
     pcall(function() loaded = LoadAsset(path) end)
     if valid(loaded) then
@@ -1040,6 +1052,9 @@ local function apply_now()
     if buses > 0 or classes > 0 then
         -- Startup is satisfied. Retry only while nothing has ever landed.
         started = true
+        -- The engine is up and something landed, so pulling an asset in is
+        -- safe from here until the next level change.
+        load_allowed = true
     end
 
     if buses == 0 and classes == 0 then
@@ -1936,6 +1951,7 @@ if Panel then
     pcall(function()
         RegisterLoadMapPreHook(function()
             panel_suspended = true
+            load_allowed = false
             epoch = epoch + 1
             panel_events = {}
             close_panel()
@@ -1948,6 +1964,7 @@ if Panel then
         end)
         RegisterLoadMapPostHook(function()
             panel_suspended = false
+            load_allowed = started
             -- Different area, different sounds loaded. Keeping the paddock's
             -- picks through a race is how you end up comparing grid-intro
             -- warmups against your race mix.
