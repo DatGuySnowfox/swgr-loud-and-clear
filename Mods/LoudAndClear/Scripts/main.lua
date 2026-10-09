@@ -220,6 +220,21 @@ local CONFIG = {
     test_sounds = true,
     test_min_seconds = 0.4,
 
+    -- What a Bypass toggle plays, together. Sound classes, not submixes:
+    -- SoundSubmixObject is set on two sounds in the entire game, so matching on
+    -- it found nothing. These names are measured from a live race with
+    -- Ctrl+F11, not taken from the class tree in the README, which lists only
+    -- about half of what the game actually uses.
+    test_classes = {
+        "SC_Vehicles",          -- engines and exhaust
+        "SC_VehicleInAir",      -- airflow
+        "SC_Ambience",
+        "SC_Characters",        -- crowds and world characters
+        "SC_Characters_Vox",    -- dialogue
+        "SC_Music",
+        "SC_Overtakes",
+    },
+
     expected_class_volume = 1.0,
     baseline_tolerance = 0.01,
 
@@ -980,29 +995,15 @@ local samples = nil
 local sample_components = {}
 
 local function test_targets()
-    local list = {}
-    for _, relpath in ipairs(CONFIG.duck_order) do
-        list[#list + 1] = { key = relpath,
-                            name = relpath:match("([^/]+)$"),
-                            kind = "submix" }
-    end
-    for _, relpath in ipairs(CONFIG.voice_classes) do
-        list[#list + 1] = { key = relpath,
-                            name = relpath:match("([^/]+)$"),
-                            kind = "class" }
-    end
-    return list
+    return CONFIG.test_classes
 end
 
 local function find_samples()
     if samples then return samples end
     samples = {}
 
-    local by_submix, by_class = {}, {}
-    for _, target in ipairs(test_targets()) do
-        if target.kind == "submix" then by_submix[target.name] = target.key
-        else by_class[target.name] = target.key end
-    end
+    local wanted, lengths = {}, {}
+    for _, name in ipairs(test_targets()) do wanted[name] = true end
 
     -- Cues before waves: a SoundWave usually has no routing of its own, the cue
     -- that plays it carries it.
@@ -1014,30 +1015,25 @@ local function find_samples()
                 if valid(sound) then
                     scanned = scanned + 1
 
-                    local submix_name, class_name
-                    pcall(function()
-                        local sm = sound.SoundSubmixObject
-                        if valid(sm) then submix_name = sm:GetFName():ToString() end
-                    end)
+                    local class_name
                     pcall(function()
                         local sc = sound.SoundClassObject
                         if valid(sc) then class_name = sc:GetFName():ToString() end
                     end)
-                    if submix_name or class_name then routed = routed + 1 end
+                    if class_name then routed = routed + 1 end
 
-                    local key = (submix_name and by_submix[submix_name])
-                             or (class_name and by_class[class_name])
-
-                    if key and not samples[key] then
+                    if class_name and wanted[class_name] then
                         local duration
                         pcall(function() duration = sound.Duration end)
-                        -- Loops are fine now that these are stoppable, but a
-                        -- silent or absurdly long asset still is not a sample.
                         if type(duration) == "number"
                            and duration >= CONFIG.test_min_seconds then
-                            samples[key] = sound
-                            log("  sample for %-44s %s", key,
-                                (sound:GetFullName() or ""):match("([^.]+)$") or "?")
+                            -- Prefer the longest, because the first usable hit
+                            -- was a one-shot scream. A longer asset is a better
+                            -- sample of what a channel normally sounds like.
+                            if duration > (lengths[class_name] or 0) then
+                                samples[class_name] = sound
+                                lengths[class_name] = duration
+                            end
                         end
                     end
                 end
@@ -1046,8 +1042,12 @@ local function find_samples()
     end
 
     local found = 0
-    for _ in pairs(samples) do found = found + 1 end
-    log("found %d of %d samples (%d sounds scanned, %d had routing)",
+    for class_name, sound in pairs(samples) do
+        found = found + 1
+        log("  %-22s %s", class_name,
+            (sound:GetFullName() or ""):match("([^.]+)$") or "?")
+    end
+    log("found %d of %d samples (%d sounds scanned, %d carried a class)",
         found, #test_targets(), scanned, routed)
     if found == 0 then
         log("  nothing matched. lac_sounds lists the submixes and classes the")
@@ -1093,8 +1093,8 @@ local function play_samples(why)
 
     local found = find_samples()
     local played = 0
-    for _, target in ipairs(test_targets()) do
-        local sound = found[target.key]
+    for _, class_name in ipairs(test_targets()) do
+        local sound = found[class_name]
         if valid(sound) then
             -- SpawnSound2D hands back a component, so a looping engine bed can
             -- be stopped again. bAutoDestroy false keeps the handle valid.
@@ -1731,7 +1731,7 @@ local function report_sounds()
         for name, n in pairs(tbl) do rows[#rows + 1] = { name = name, n = n } end
         table.sort(rows, function(a, b) return a.n > b.n end)
         log("%s (%d distinct):", label, #rows)
-        for i = 1, math.min(#rows, 20) do
+        for i = 1, math.min(#rows, 40) do
             log("   %-34s %d", rows[i].name, rows[i].n)
         end
         if #rows == 0 then log("   none") end
