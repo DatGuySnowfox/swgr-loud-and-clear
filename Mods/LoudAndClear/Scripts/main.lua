@@ -330,11 +330,19 @@ local CONFIG = {
         ["SC_VehicleInAir"]      = { "Airflow", "Wind", "TopSpeed", "High" },
         ["SC_Ambience"]          = { "Bed_", "_Loop" },
         ["SC_Characters"]        = { "Crowd", "Walla" },
-        ["SC_Characters_Vox"]    = { "Murmur", "Grumble", "Idle" },
-        -- Prefer something with words in it over a grunt, so the voice slider
-        -- is judged on speech rather than on a scream.
-        ["SC_DiegeticVoice"]     = { "Line", "Dialogue", "Conversation", "Vox" },
-        ["SC_NonDiegeticVoice"]  = { "Commentary", "Announcer", "Line", "Vox" },
+        -- Long before short, and words before noises. The game names its
+        -- variants explicitly, as in GrumbleLong against GrumbleShort, so the
+        -- preference can simply say so. Every MetaSound reports the same
+        -- indefinite duration, so the name is the only length signal there is.
+        ["SC_Characters_Vox"]    = {
+            "Conversation", "Long", "Murmur", "Grumble", "Idle",
+        },
+        ["SC_DiegeticVoice"]     = {
+            "Conversation", "Long", "Line", "Dialogue", "Vox",
+        },
+        ["SC_NonDiegeticVoice"]  = {
+            "Commentary", "Announcer", "Long", "Line", "Vox",
+        },
         ["SC_Music_Menus"]       = { "Loop" },
         ["SC_Music_Paddock"]     = { "Loop" },
         ["SC_Music_Cinematics"]  = { "Loop" },
@@ -349,6 +357,10 @@ local CONFIG = {
         },
         ["SC_Ambience"]   = { "GridIntro" },
         ["SC_Characters"] = { "Foley" },
+        -- A one-shot scream says nothing about whether speech is intelligible.
+        ["SC_Characters_Vox"]   = { "Short", "Scream", "Grunt" },
+        ["SC_DiegeticVoice"]    = { "Short", "Scream", "Grunt" },
+        ["SC_NonDiegeticVoice"] = { "Short", "Scream", "Grunt" },
     },
 
     test_classes = {
@@ -1425,9 +1437,8 @@ local pending_idle = 0
 
 local function apply_one(key)
     -- Touching a slider means the user wants our mix, so it re-engages the
-    -- verify pass and lifts bypass rather than fighting them.
+    -- verify pass rather than fighting them.
     applied = true
-    model.bypassed = false
 
     if key == "class_boost" then
         CONFIG.class_boost = model.class_boost
@@ -1628,7 +1639,6 @@ local function open_panel()
     -- With the cursor doing the work, hover is the only highlight that means
     -- something, and a click sets this to whatever was clicked.
     model.selection = 0
-    model.bypassed = not applied
 
     -- Said once per cutscene, not once per keypress. The first version reported
     -- it on every press and logged 37 refusals in 18 seconds, which is what
@@ -1734,11 +1744,6 @@ local function panel_action(id)
         adopt(DEFAULTS)
         log("back to the mod's default mix. Save to keep this.")
 
-    -- Compare: a toggle, not a one-shot, so the game's own mix can be heard
-    -- against this one by ear. That comparison is the entire job here. It was
-    -- called Bypass until it also started playing a sample through every
-    -- channel, at which point it stopped being an off switch and became an A/B
-    -- test, and "Bypass: off" read as though it disabled the comparison.
     -- Restarting the samples is how a class boost becomes audible: the class
     -- is sampled when a sound starts, so anything already playing is deaf to a
     -- change you just made.
@@ -1750,19 +1755,6 @@ local function panel_action(id)
             play_samples("on demand")
         end
 
-    elseif id == "bypass" then
-        model.bypassed = not model.bypassed
-        if model.bypassed then
-            reset_now()
-            log("comparing: you are hearing the game's own mix")
-        else
-            applied = true
-            apply_now()
-            log("comparing: back to your mix")
-        end
-        -- After the switch, so the samples demonstrate whichever mix is now in
-        -- effect rather than the one being left behind.
-        play_samples(model.bypassed and "game's own mix" or "your mix")
     end
 end
 

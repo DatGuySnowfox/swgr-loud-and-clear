@@ -237,12 +237,11 @@ function Panel.create(controller, model, order, focusable, pair)
     add(values_row, 32, 5)
 
     local mode_row = make("HorizontalBox")
-    button("test", "Play test", mode_row)
-    button("bypass", "Compare", mode_row)
+    button("test", "Play sound test", mode_row)
     button("close", "Close", mode_row)
     add(mode_row, 32, 4)
 
-    add(label("Play test, then drag. Replay it to hear a raise.", 12, MUTED), 17, 1)
+    add(label("Play the sound test, drag, then replay to hear it.", 12, MUTED), 17, 1)
     add(label("Saved values load automatically next launch.", 12, MUTED), 17, 0)
 
     slot:SetSize({ X = self.width, Y = self.height })
@@ -340,8 +339,7 @@ end
 -- rate instead.
 function Panel:unchanged(model, order, dirty)
     local parts = { string.format("%.4f", model.class_boost),
-                    tostring(model.selection), tostring(dirty),
-                    tostring(model.bypassed) }
+                    tostring(model.selection), tostring(dirty) }
     for _, relpath in ipairs(order) do
         parts[#parts + 1] = string.format("%.4f", self:level(model, relpath))
     end
@@ -361,13 +359,8 @@ function Panel:update(model, order, dirty)
         end
     end
 
-    if model.bypassed then
-        self.status:SetText(FText("Comparing: you are hearing the game's own mix"))
-        tint(self.status, CYAN)
-    else
-        self.status:SetText(FText(dirty and "Unsaved changes" or "Saved"))
-        tint(self.status, dirty and AMBER or MUTED)
-    end
+    self.status:SetText(FText(dirty and "Unsaved changes" or "Saved"))
+    tint(self.status, dirty and AMBER or MUTED)
 
     for index, button in ipairs(self.buttons) do
         -- Save and Undo only mean something while there are unsaved changes.
@@ -375,27 +368,19 @@ function Panel:update(model, order, dirty)
         if button.id == "save" or button.id == "undo" then enabled = dirty end
         button.control:SetIsEnabled(enabled)
 
-        -- The label says which mix you are hearing, not on or off. With two
-        -- mixes in play, "on" does not say which one is playing.
-        if button.id == "bypass" then
-            button.caption:SetText(FText(
-                model.bypassed and "Compare: game mix" or "Compare: your mix"))
-        end
-
         -- Says what pressing it will do. Restarting the samples is also how a
-        -- boost becomes audible, so this is the button people will press most.
+        -- raise becomes audible, so this is the button people press most.
         if button.id == "test" then
             local playing = false
             pcall(function() playing = samples_playing() end)
-            button.caption:SetText(FText(playing and "Stop test" or "Play test"))
+            button.caption:SetText(FText(
+                playing and "Stop sound test" or "Play sound test"))
         end
 
         local active = index == model.selection or button.control:IsHovered()
         local background = ROW_BG
         if not enabled then
             background = colour(22, 26, 36, 0.8)
-        elseif button.id == "bypass" and model.bypassed then
-            background = CYAN            -- latched, so it reads as on at a glance
         elseif active then
             background = button.id == "save" and AMBER or CYAN_DIM
         end
@@ -404,7 +389,6 @@ function Panel:update(model, order, dirty)
         local dark = colour(12, 16, 24)
         local caption = TEXT
         if not enabled then caption = DISABLED
-        elseif button.id == "bypass" and model.bypassed then caption = dark
         elseif active then caption = dark end
         tint(button.caption, caption)
     end
