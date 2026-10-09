@@ -49,7 +49,9 @@ local DISPLAY = {
     ["Submixes/SS_Ambience"]                       = "Ambience",
 
     -- Boost channels. Sound classes, not submixes.
-    ["Classes/SC_Vehicles"]                        = "Engines and exhaust",
+    ["Classes/SC_LocalPlayerEngine"]               = "Your engine",
+    ["Classes/SC_LocalPlayerExhaust"]              = "Your exhaust",
+    ["Classes/SC_Vehicles"]                        = "Other vehicles",
     ["Classes/SC_VehicleInAir"]                    = "Airflow",
     ["Classes/SC_Ambience"]                        = "Ambience",
     ["Classes/SC_Crashing"]                        = "Crashes",

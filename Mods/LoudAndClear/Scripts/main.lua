@@ -194,11 +194,16 @@ local CONFIG = {
     -- unity and the ceiling at once and a positive request comes back as unity.
     --
     -- Sound class volume has no such ceiling, which is how dialogue reaches
-    -- 1.7x. An earlier version of this offered one lumped SC_SFX slider,
-    -- because the README's class tree lists 14 classes and none of them covered
-    -- engines or ambience. The live class report showed the game actually
-    -- uses 30, including SC_Vehicles, SC_VehicleInAir, SC_Ambience,
-    -- SC_Crashing and SC_Overtakes. So these get a slider each.
+    -- 1.7x. An earlier version offered one lumped SC_SFX slider, because the
+    -- README's class tree lists 14 classes and none covered engines or
+    -- ambience.
+    --
+    -- The live report tells a different story, and it changes with where you
+    -- are: 30 classes in the paddock, 49 mid-race. SC_LocalPlayerEngine and
+    -- SC_LocalPlayerExhaust only exist in the second list, which is why an
+    -- earlier version aimed at SC_Vehicles and could never find an engine in
+    -- it. These mirror the duck sliders: SS_LocalPlayerEngine ducks,
+    -- SC_LocalPlayerEngine boosts.
     --
     -- SC_SFX is deliberately not in this list. Gain on a parent is inherited,
     -- and it is very likely the parent of these, so boosting both would
@@ -210,13 +215,17 @@ local CONFIG = {
     -- makes the mix hot and the limiter audible. boost_ceiling is where it
     -- stops.
     boost = {
-        ["Classes/SC_Vehicles"]     = 1.0,
-        ["Classes/SC_VehicleInAir"] = 1.0,
-        ["Classes/SC_Ambience"]     = 1.0,
-        ["Classes/SC_Crashing"]     = 1.0,
-        ["Classes/SC_Overtakes"]    = 1.0,
+        ["Classes/SC_LocalPlayerEngine"]  = 1.0,
+        ["Classes/SC_LocalPlayerExhaust"] = 1.0,
+        ["Classes/SC_Vehicles"]           = 1.0,
+        ["Classes/SC_VehicleInAir"]       = 1.0,
+        ["Classes/SC_Ambience"]           = 1.0,
+        ["Classes/SC_Crashing"]           = 1.0,
+        ["Classes/SC_Overtakes"]          = 1.0,
     },
     boost_order = {
+        "Classes/SC_LocalPlayerEngine",
+        "Classes/SC_LocalPlayerExhaust",
         "Classes/SC_Vehicles",
         "Classes/SC_VehicleInAir",
         "Classes/SC_Ambience",
@@ -254,10 +263,9 @@ local CONFIG = {
         -- The continuous engine note is a MetaSound, not one of the SW_ wave
         -- loops, and its name is not known until a race loads it. These are the
         -- plausible shapes; Ctrl+END during a race lists what is really there.
-        ["SC_Vehicles"] = {
-            "LocalPlayerEngine", "PlayerEngine",
-            "Engine", "Exhaust", "Throttle", "Rev",
-        },
+        ["SC_LocalPlayerEngine"]  = { "TopSpeed", "High", "Loop", "Engine" },
+        ["SC_LocalPlayerExhaust"] = { "TopSpeed", "High", "Loop", "Exhaust" },
+        ["SC_Vehicles"] = { "Engine", "Exhaust", "Throttle", "Rev" },
         ["SC_VehicleInAir"]      = { "Airflow", "Wind", "TopSpeed", "High" },
         ["SC_Ambience"]          = { "Bed_", "_Loop" },
         ["SC_Characters"]        = { "Crowd", "Walla" },
@@ -279,7 +287,9 @@ local CONFIG = {
     },
 
     test_classes = {
-        "SC_Vehicles",          -- engines and exhaust
+        "SC_LocalPlayerEngine", -- your engine, only loaded in a race
+        "SC_LocalPlayerExhaust",
+        "SC_Vehicles",          -- other vehicles and grid sounds
         "SC_VehicleInAir",      -- airflow
         "SC_Ambience",
         "SC_Characters",        -- crowds and world characters
