@@ -47,6 +47,13 @@ local DISPLAY = {
     ["Submixes/SS_LocalPlayerEngine"]              = "Your engine",
     ["Submixes/SS_LocalPlayerExhaust"]             = "Your exhaust",
     ["Submixes/SS_Ambience"]                       = "Ambience",
+
+    -- Boost channels. Sound classes, not submixes.
+    ["Classes/SC_Vehicles"]                        = "Engines and exhaust",
+    ["Classes/SC_VehicleInAir"]                    = "Airflow",
+    ["Classes/SC_Ambience"]                        = "Ambience",
+    ["Classes/SC_Crashing"]                        = "Crashes",
+    ["Classes/SC_Overtakes"]                       = "Overtakes",
 }
 
 local function decibels(multiplier)
@@ -211,9 +218,9 @@ function Panel.create(controller, model, order, focusable, boost_order)
     -- both unity and the ceiling. SC_SFX is the only class that reaches them,
     -- and it reaches all of them at once.
     if #self.boost_order > 0 then
-        add(label("RAISE THE WORLD  (EXPERIMENTAL)", 13, MUTED), 18, 4)
+        add(label("RAISE  (EXPERIMENTAL)", 13, MUTED), 18, 4)
         for _, relpath in ipairs(self.boost_order) do
-            slider_row(relpath, DISPLAY[relpath] or "Engines, ambience, impacts",
+            slider_row(relpath, DISPLAY[relpath] or relpath:match("([^/]+)$"),
                        1.0, 2.0, 0.05,
                        function(v) return string.format("%.2fx", v) end, true)
         end

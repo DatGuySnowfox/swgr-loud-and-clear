@@ -183,28 +183,41 @@ local CONFIG = {
     -- patch genuinely rebalances the mix, the log says so and this gets updated.
     -- EXPERIMENTAL. Sound classes to make louder, as a multiplier.
     --
-    -- This is the only way anything gets louder in this game, and it is coarse.
-    -- Ducking is per submix because a control bus has 60 dB of cut available.
-    -- Boosting a submix is impossible: the bus parameter has MinVolume = -60 and
-    -- no MaxVolume, so 0 dB is unity and the ceiling at once, and a positive
-    -- request normalises above 1.0 and comes back as unity. Silently.
+    -- The only way anything gets louder in this game. Ducking is per submix
+    -- because a control bus has 60 dB of cut; boosting a submix is impossible,
+    -- since the bus parameter has MinVolume = -60 and no MaxVolume, so 0 dB is
+    -- unity and the ceiling at once and a positive request comes back as unity.
     --
     -- Sound class volume has no such ceiling, which is how dialogue reaches
-    -- 1.7x. But there are no classes for engines, ambience, crowds or airflow;
-    -- those exist only as submixes. SC_SFX is the one class that covers them,
-    -- and it covers all of them together along with impacts and world sound.
+    -- 1.7x. An earlier version of this offered one lumped SC_SFX slider,
+    -- because the README's class tree lists 14 classes and none of them covered
+    -- engines or ambience. Ctrl+F11 on a live race showed the game actually
+    -- uses 30, including SC_Vehicles, SC_VehicleInAir, SC_Ambience,
+    -- SC_Crashing and SC_Overtakes. So these get a slider each.
     --
-    -- So this is one slider for the whole world, not one per channel. 1.0 is
-    -- off. Ctrl+PageUp and Ctrl+PageDown nudge it live so it can be judged by
-    -- ear, which is the only way to judge it.
+    -- SC_SFX is deliberately not in this list. Gain on a parent is inherited,
+    -- and it is very likely the parent of these, so boosting both would
+    -- multiply. Ctrl+F11 lists every class in use if you want to add others.
+    --
+    -- 1.0 is off. Ctrl+PageUp and Ctrl+PageDown nudge the whole set at once.
     --
     -- Headroom warning: dialogue is already at 1.7x. Pushing this up as well
     -- makes the mix hot and the limiter audible. boost_ceiling is where it
     -- stops.
     boost = {
-        ["Classes/SC_SFX"] = 1.0,
+        ["Classes/SC_Vehicles"]     = 1.0,
+        ["Classes/SC_VehicleInAir"] = 1.0,
+        ["Classes/SC_Ambience"]     = 1.0,
+        ["Classes/SC_Crashing"]     = 1.0,
+        ["Classes/SC_Overtakes"]    = 1.0,
     },
-    boost_order = { "Classes/SC_SFX" },
+    boost_order = {
+        "Classes/SC_Vehicles",
+        "Classes/SC_VehicleInAir",
+        "Classes/SC_Ambience",
+        "Classes/SC_Crashing",
+        "Classes/SC_Overtakes",
+    },
     boost_step = 0.05,
     boost_ceiling = 2.0,
 
@@ -1610,27 +1623,31 @@ RegisterKeyBindAsync(Key.F10, { ModifierKey.CONTROL }, function() report_cutscen
 --
 -- Not saved automatically. Save in the panel keeps it, or edit CONFIG.
 local function nudge_boost(delta)
-    local relpath = CONFIG.boost_order[1]
-    if not relpath then return end
+    local moved, at_limit = 0, 0
+    local shown
 
-    local current = CONFIG.boost[relpath] or 1.0
-    local target = math.max(1.0, math.min(CONFIG.boost_ceiling, current + delta))
-    target = math.floor(target * 100 + 0.5) / 100
+    for _, relpath in ipairs(CONFIG.boost_order) do
+        local current = CONFIG.boost[relpath] or 1.0
+        local target = math.max(1.0,
+            math.min(CONFIG.boost_ceiling, current + delta))
+        target = math.floor(target * 100 + 0.5) / 100
+        if math.abs(target - current) < 0.0001 then
+            at_limit = at_limit + 1
+        else
+            CONFIG.boost[relpath] = target
+            moved = moved + 1
+            shown = target
+        end
+    end
 
-    if math.abs(target - current) < 0.0001 then
-        log("world boost is already at %.2fx, its %s", current,
-            delta > 0 and "ceiling" or "floor")
+    if moved == 0 then
+        log("every boost is already at its %s", delta > 0 and "ceiling" or "floor")
         return
     end
 
-    CONFIG.boost[relpath] = target
-    log("world boost %.2fx -> %.2fx (%+.1f dB on %s)",
-        current, target, 20 * math.log(target, 10), relpath:match("([^/]+)$"))
-    if target == 1.0 then
-        log("  back to the game's own level. Reset with Ctrl+F9 if it still")
-        log("  sounds lifted: returning to 1.0 does not restore the class until")
-        log("  the next apply.")
-    end
+    log("raised %d channel(s) to %.2fx (%+.1f dB)%s", moved, shown or 1.0,
+        20 * math.log(shown or 1.0, 10),
+        at_limit > 0 and string.format(", %d already at the limit", at_limit) or "")
     apply()
 end
 
@@ -1677,17 +1694,35 @@ end)
 -- cinematics and that needs knowing before trusting it.
 -- lac_boost 1.25, or lac_boost with no argument to report the current value.
 RegisterConsoleCommandHandler("lac_boost", function(_, parameters)
-    local relpath = CONFIG.boost_order[1]
-    local current = CONFIG.boost[relpath] or 1.0
     local wanted = tonumber(parameters[1])
     if not wanted then
-        log("world boost is %.2fx on %s. Pass a multiplier between 1.0 and %.2f.",
-            current, relpath, CONFIG.boost_ceiling)
+        log("boost levels, 1.0 to %.2f:", CONFIG.boost_ceiling)
+        for _, relpath in ipairs(CONFIG.boost_order) do
+            log("   %-28s %.2fx", relpath, CONFIG.boost[relpath] or 1.0)
+        end
+        log("lac_boost <mult> sets them all, or <class> <mult> sets one.")
         return true
     end
-    wanted = math.max(1.0, math.min(CONFIG.boost_ceiling, wanted))
-    CONFIG.boost[relpath] = wanted
-    log("world boost -> %.2fx (%+.1f dB)", wanted, 20 * math.log(wanted, 10))
+
+    -- Two forms: one argument sets every channel, two sets a named one.
+    local named = tonumber(parameters[2])
+    if named then
+        local key = parameters[1]
+        if CONFIG.boost[key] == nil then key = "Classes/" .. parameters[1] end
+        if CONFIG.boost[key] == nil then
+            log("no boost channel called %s", tostring(parameters[1]))
+            return true
+        end
+        CONFIG.boost[key] = math.max(1.0, math.min(CONFIG.boost_ceiling, named))
+        log("%s -> %.2fx", key, CONFIG.boost[key])
+    else
+        wanted = math.max(1.0, math.min(CONFIG.boost_ceiling, wanted))
+        for _, relpath in ipairs(CONFIG.boost_order) do
+            CONFIG.boost[relpath] = wanted
+        end
+        log("all boost channels -> %.2fx (%+.1f dB)",
+            wanted, 20 * math.log(wanted, 10))
+    end
     apply()
     return true
 end)
