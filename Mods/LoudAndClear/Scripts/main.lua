@@ -1049,6 +1049,12 @@ end
 -- dialogue. Matching is on the submix a sound sends to, because that is the
 -- stage the sliders move. Matching by sound class, as the first version did,
 -- demonstrates nothing about a submix slider.
+-- SoundCue and SoundWave alone missed things: a race has 4143 sounds loaded
+-- and only 604 carry a class, while the engine audio that the submix sliders
+-- demonstrably move never appears. MetaSoundSource and SoundBase are scanned
+-- too, deduplicated by full name.
+local SOUND_KINDS = { "SoundCue", "SoundWave", "MetaSoundSource", "SoundBase" }
+
 local samples = nil
 local sample_components = {}
 -- Declared global so the LoadMap hook, which is installed further down, can
@@ -1063,17 +1069,18 @@ local function find_samples()
     if samples then return samples end
     samples = {}
 
-    local wanted, lengths, ranks = {}, {}, {}
+    local wanted, lengths, ranks, seen_sound = {}, {}, {}, {}
     for _, name in ipairs(test_targets()) do wanted[name] = true end
 
     -- Cues before waves: a SoundWave usually has no routing of its own, the cue
     -- that plays it carries it.
     local scanned, routed = 0, 0
-    for _, kind in ipairs({ "SoundCue", "SoundWave" }) do
+    for _, kind in ipairs(SOUND_KINDS) do
         local ok, sounds = pcall(FindAllOf, kind)
         if ok and sounds then
             for _, sound in ipairs(sounds) do
-                if valid(sound) then
+                if valid(sound) and not seen_sound[sound:GetFullName()] then
+                    seen_sound[sound:GetFullName()] = true
                     scanned = scanned + 1
 
                     local class_name
@@ -1094,7 +1101,10 @@ local function find_samples()
 
                             -- Rank by the first preference it matches. Lower is
                             -- better; no match sorts last but stays eligible.
-                            local rank = math.huge
+                            -- Finite, because math.huge + 1000 is still
+                            -- math.huge and the avoid list below could never
+                            -- push anything past it.
+                            local rank = 500
                             local prefs = CONFIG.test_prefer[class_name]
                             if prefs then
                                 for i, needle in ipairs(prefs) do
@@ -1142,9 +1152,11 @@ local function find_samples()
         found = found + 1
         local rank = ranks[class_name]
         local prefs = CONFIG.test_prefer[class_name]
-        local why = "longest"
-        if prefs and rank and rank ~= math.huge then
+        local why = "no preference matched"
+        if prefs and rank and rank <= #prefs then
             why = "matched " .. prefs[rank]
+        elseif rank and rank > 1000 then
+            why = "on the avoid list, nothing better loaded"
         end
         log("  %-22s %-46s (%s)", class_name,
             (sound:GetFullName() or ""):match("([^.]+)$") or "?", why)
@@ -1834,11 +1846,13 @@ end)
 -- whether a sample can be found.
 local function report_sounds()
     local submixes, classes, total, routed = {}, {}, 0, 0
-    for _, kind in ipairs({ "SoundCue", "SoundWave" }) do
+    local counted_once = {}
+    for _, kind in ipairs(SOUND_KINDS) do
         local ok, sounds = pcall(FindAllOf, kind)
         if ok and sounds then
             for _, sound in ipairs(sounds) do
-                if valid(sound) then
+                if valid(sound) and not counted_once[sound:GetFullName()] then
+                    counted_once[sound:GetFullName()] = true
                     total = total + 1
                     local any = false
                     pcall(function()
@@ -1883,37 +1897,42 @@ local function report_sounds()
     local chosen = find_samples()
     for _, class_name in ipairs(CONFIG.test_classes) do
         local rows = {}
-        for _, kind in ipairs({ "SoundCue", "SoundWave" }) do
+        local listed = {}
+        for _, kind in ipairs(SOUND_KINDS) do
             local ok, sounds = pcall(FindAllOf, kind)
             if ok and sounds then
                 for _, sound in ipairs(sounds) do
-                    if valid(sound) then
+                    local full = valid(sound) and sound:GetFullName() or nil
+                    if full and not listed[full] then
+                        listed[full] = true
                         local name
                         pcall(function()
                             local sc = sound.SoundClassObject
                             if valid(sc) then name = sc:GetFName():ToString() end
                         end)
                         if name == class_name then
-                            local d
-                            pcall(function() d = sound.Duration end)
+                            local kind_name = "?"
+                            pcall(function()
+                                kind_name = sound:GetClass():GetFName():ToString()
+                            end)
                             rows[#rows + 1] = {
-                                asset = (sound:GetFullName() or ""):match("([^.]+)$") or "?",
-                                d = type(d) == "number" and d or 0,
+                                asset = full:match("([^.]+)$") or "?",
+                                kind = kind_name,
                             }
                         end
                     end
                 end
             end
         end
-        table.sort(rows, function(a, b) return a.d > b.d end)
+        table.sort(rows, function(a, b) return a.asset < b.asset end)
         local picked = chosen[class_name]
         local picked_name = picked
             and ((picked:GetFullName() or ""):match("([^.]+)$") or "?") or nil
         log("%s: %d candidate(s)", class_name, #rows)
         for i = 1, math.min(#rows, 10) do
-            log("   %s %-52s %.1fs",
+            log("   %s %-52s %s",
                 rows[i].asset == picked_name and "->" or "  ",
-                rows[i].asset, rows[i].d)
+                rows[i].asset, rows[i].kind)
         end
         if #rows == 0 then log("   none loaded here") end
     end
