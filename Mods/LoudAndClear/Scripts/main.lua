@@ -937,6 +937,8 @@ local function snapshot(into)
     into.class_boost = CONFIG.class_boost
     into.duck = {}
     for relpath, value in pairs(CONFIG.duck) do into.duck[relpath] = value end
+    into.boost = {}
+    for relpath, value in pairs(CONFIG.boost) do into.boost[relpath] = value end
 end
 
 local function is_dirty()
@@ -944,6 +946,10 @@ local function is_dirty()
     if math.abs(model.class_boost - saved.class_boost) > 0.0001 then return true end
     for relpath, value in pairs(model.duck) do
         if math.abs(value - (saved.duck[relpath] or value)) > 0.0001 then return true end
+    end
+    for relpath, value in pairs(model.boost or {}) do
+        local was = (saved.boost and saved.boost[relpath]) or value
+        if math.abs(value - was) > 0.0001 then return true end
     end
     return false
 end
@@ -961,6 +967,9 @@ local function apply_one(key)
         for _, relpath in ipairs(CONFIG.voice_classes) do
             set_class_multiplier(relpath, CONFIG.class_boost)
         end
+    elseif CONFIG.boost[key] ~= nil then
+        CONFIG.boost[key] = model.boost[key]
+        set_class_multiplier(key, model.boost[key])
     else
         CONFIG.duck[key] = model.duck[key]
         set_bus_multiplier(key, model.duck[key])
@@ -1124,7 +1133,8 @@ local function open_panel()
     else
         vlog("panel: building widgets")
         local created, err = pcall(function()
-            return Panel.create(pc, model, CONFIG.duck_order, CONFIG.panel_grabs_input)
+            return Panel.create(pc, model, CONFIG.duck_order,
+                                CONFIG.panel_grabs_input, CONFIG.boost_order)
         end)
         if not created then
             log("could not open the panel: %s", tostring(err))

@@ -54,7 +54,7 @@ local function decibels(multiplier)
     return string.format("%+.1f dB", 20 * math.log(multiplier, 10))
 end
 
-function Panel.create(controller, model, order, focusable)
+function Panel.create(controller, model, order, focusable, boost_order)
     -- Why the host is built this way rather than borrowed.
     --
     -- The first version created one of the game's own widget blueprints,
@@ -78,7 +78,8 @@ function Panel.create(controller, model, order, focusable)
     assert(widget_tree_class and widget_tree_class:IsValid(),
         "UMG.WidgetTree unavailable")
 
-    local self = { sliders = {}, values = {}, buttons = {}, width = 470, height = 40 }
+    local self = { sliders = {}, values = {}, buttons = {}, width = 470, height = 40,
+                   boost_order = boost_order or {} }
 
     -- Outered to the controller so UUserWidget::GetWorld resolves through it.
     -- A widget built this way never runs Initialize(), which is the thing that
@@ -178,6 +179,20 @@ function Panel.create(controller, model, order, focusable)
         slider_row(relpath, DISPLAY[relpath] or relpath, 0.15, 1.0, 0.01, decibels)
     end
 
+    -- One control, not one per channel, and the label says so. Engines and
+    -- ambience cannot be raised separately: they exist only as submixes, and a
+    -- submix cannot be boosted at all, because its bus parameter treats 0 dB as
+    -- both unity and the ceiling. SC_SFX is the only class that reaches them,
+    -- and it reaches all of them at once.
+    if #self.boost_order > 0 then
+        add(label("RAISE THE WORLD  (EXPERIMENTAL)", 13, MUTED), 18, 4)
+        for _, relpath in ipairs(self.boost_order) do
+            slider_row(relpath, DISPLAY[relpath] or "Engines, ambience, impacts",
+                       1.0, 2.0, 0.05,
+                       function(v) return string.format("%.2fx", v) end)
+        end
+    end
+
     local rule2 = make("Border"); rule2:SetBrushColor(BAR); add(rule2, 2, 12)
 
     self.status = label("", 13, MUTED)
@@ -251,6 +266,17 @@ function Panel:read(model, order)
             end
         end
     end
+
+    for _, relpath in ipairs(self.boost_order) do
+        local control = self.sliders[relpath]
+        if control and model.boost then
+            local v = math.floor(control:GetValue() * 100 + 0.5) / 100
+            if math.abs(v - (model.boost[relpath] or 1.0)) > 0.0001 then
+                model.boost[relpath] = v
+                changed[#changed + 1] = relpath
+            end
+        end
+    end
     return changed
 end
 
@@ -259,6 +285,11 @@ function Panel:write(model, order)
     for _, relpath in ipairs(order) do
         if self.sliders[relpath] then
             self.sliders[relpath]:SetValue(model.duck[relpath] or 1.0)
+        end
+    end
+    for _, relpath in ipairs(self.boost_order) do
+        if self.sliders[relpath] and model.boost then
+            self.sliders[relpath]:SetValue(model.boost[relpath] or 1.0)
         end
     end
 end
@@ -281,6 +312,10 @@ function Panel:unchanged(model, order, dirty)
     for _, relpath in ipairs(order) do
         parts[#parts + 1] = string.format("%.4f", model.duck[relpath] or 1.0)
     end
+    for _, relpath in ipairs(self.boost_order) do
+        parts[#parts + 1] = string.format("%.4f",
+            (model.boost and model.boost[relpath]) or 1.0)
+    end
     local signature = table.concat(parts, "|")
     if signature == self.signature then return true end
     self.signature = signature
@@ -294,6 +329,12 @@ function Panel:update(model, order, dirty)
         local slot = self.values[relpath]
         if slot then
             slot.widget:SetText(FText(slot.format(model.duck[relpath] or 1.0)))
+        end
+    end
+    for _, relpath in ipairs(self.boost_order) do
+        local slot = self.values[relpath]
+        if slot and model.boost then
+            slot.widget:SetText(FText(slot.format(model.boost[relpath] or 1.0)))
         end
     end
 
