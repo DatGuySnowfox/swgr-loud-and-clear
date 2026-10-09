@@ -330,19 +330,25 @@ local CONFIG = {
         ["SC_VehicleInAir"]      = { "Airflow", "Wind", "TopSpeed", "High" },
         ["SC_Ambience"]          = { "Bed_", "_Loop" },
         ["SC_Characters"]        = { "Crowd", "Walla" },
-        -- Long before short, and words before noises. The game names its
-        -- variants explicitly, as in GrumbleLong against GrumbleShort, so the
-        -- preference can simply say so. Every MetaSound reports the same
-        -- indefinite duration, so the name is the only length signal there is.
+        -- Self-contained one-shots first, which is the opposite of what reads
+        -- as sensible and is what the evidence says.
+        --
+        -- Most of this game's MetaSound sources are parameter driven: spawned
+        -- bare they run and output silence, which is why a test can report
+        -- eight sources playing and be inaudible. The ones that did make noise
+        -- were MS_Vox_Durian_GrumbleShort_Grid and
+        -- MS_Char_Pistachio_Vox_Scream_Grid, both simple one-shots. Preferring
+        -- Conversation and Long moved the pick away from exactly those and the
+        -- test went quiet.
+        --
+        -- Nothing in a name, class or duration separates a self-contained
+        -- source from a parameter shell, so this is a list of things observed
+        -- to work rather than a rule.
         ["SC_Characters_Vox"]    = {
-            "Conversation", "Long", "Murmur", "Grumble", "Idle",
+            "Scream", "Grumble", "Murmur", "Meow", "Idle",
         },
-        ["SC_DiegeticVoice"]     = {
-            "Conversation", "Long", "Line", "Dialogue", "Vox",
-        },
-        ["SC_NonDiegeticVoice"]  = {
-            "Commentary", "Announcer", "Long", "Line", "Vox",
-        },
+        ["SC_DiegeticVoice"]     = { "Scream", "Grumble", "Vox", "Line" },
+        ["SC_NonDiegeticVoice"]  = { "Commentary", "Announcer", "Vox" },
         ["SC_Music_Menus"]       = { "Loop" },
         ["SC_Music_Paddock"]     = { "Loop" },
         ["SC_Music_Cinematics"]  = { "Loop" },
@@ -367,10 +373,7 @@ local CONFIG = {
         },
         ["SC_Ambience"]   = { "GridIntro" },
         ["SC_Characters"] = { "Foley" },
-        -- A one-shot scream says nothing about whether speech is intelligible.
-        ["SC_Characters_Vox"]   = { "Short", "Scream", "Grunt" },
-        ["SC_DiegeticVoice"]    = { "Short", "Scream", "Grunt" },
-        ["SC_NonDiegeticVoice"] = { "Short", "Scream", "Grunt" },
+
     },
 
     test_classes = {
@@ -1374,8 +1377,9 @@ local function find_samples()
     end
     if #missing > 0 then
         log("  not loaded here: %s", table.concat(missing, ", "))
-        log("  that is usually the area, not a fault. A race loads the most,")
-        log("  the paddock less, the main menu least.")
+        log("  that is the area, not a fault. The sound test is built for a race:")
+        log("  the engine, exhaust, rival and airflow classes only exist there,")
+        log("  and so do most of the sounds that play standalone.")
     end
 
     if found == 0 then
@@ -1464,8 +1468,17 @@ local function play_samples(why)
                 pcall(function()
                     sounding = tostring(component:IsPlaying())
                 end)
+                -- The object's class, because three theories about why these
+                -- are silent have now failed and the one thing never checked is
+                -- what is actually being spawned. A MetaSound Patch is a
+                -- reusable graph fragment and is not playable at all; only a
+                -- Source is. The naming hints at it, MSP_ against MS_, but a
+                -- hint is what the last three theories were built on.
+                local kind = "?"
+                pcall(function() kind = sound:GetClass():GetFName():ToString() end)
                 local asset = (sound:GetFullName() or ""):match("([^.]+)$") or "?"
-                log("  %-22s %-46s playing=%s", class_name, asset, sounding)
+                log("  %-22s %-46s %-18s playing=%s",
+                    class_name, asset, kind, sounding)
             end
         end
     end
