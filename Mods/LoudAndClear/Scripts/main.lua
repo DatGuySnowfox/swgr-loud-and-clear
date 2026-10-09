@@ -351,6 +351,16 @@ local CONFIG = {
     -- Skipped unless a class has nothing else. Grid intros, cosmetic trails and
     -- one-shot malfunctions are not what these channels sound like in a race,
     -- and in the paddock they were the only vehicle candidates there were.
+    -- Avoided in every class, not just one.
+    --
+    -- A MetaSound named Reader, Source, Player or Customisable is a
+    -- parameterised shell: spawned with no inputs it produces silence, which
+    -- looks like a working sample in the log and sounds like nothing at all.
+    -- MS_WallaReader, MS_VOPlayer and MS_PlayerHelmetVOPlayer_Customisable
+    -- were all chosen and all silent, which is why the test seemed to play only
+    -- dialogue: the voice assets it picked happened to be self-contained.
+    test_avoid_all = { "Reader", "_Source", "Customisable", "VOPlayer" },
+
     test_avoid = {
         ["SC_Vehicles"] = {
             "GridIntro", "Cosmetic", "Trails", "Weather", "Malfunction",
@@ -1308,6 +1318,12 @@ local function find_samples()
                                         rank = rank + 1000
                                         break
                                     end
+                                end
+                            end
+                            for _, needle in ipairs(CONFIG.test_avoid_all) do
+                                if lower:find(needle:lower(), 1, true) then
+                                    rank = rank + 2000
+                                    break
                                 end
                             end
 
