@@ -63,7 +63,7 @@ local function decibels(multiplier)
     return string.format("%+.1f dB", 20 * math.log(multiplier, 10))
 end
 
-function Panel.create(controller, model, order, focusable, boost_order)
+function Panel.create(controller, model, order, focusable, pair)
     -- Why the host is built this way rather than borrowed.
     --
     -- The first version created one of the game's own widget blueprints,
@@ -88,7 +88,7 @@ function Panel.create(controller, model, order, focusable, boost_order)
         "UMG.WidgetTree unavailable")
 
     local self = { sliders = {}, values = {}, buttons = {}, scale = {},
-                   width = 470, height = 40, boost_order = boost_order or {} }
+                   width = 470, height = 40, pair = pair or {} }
 
     -- Outered to the controller so UUserWidget::GetWorld resolves through it.
     -- A widget built this way never runs Initialize(), which is the thing that
@@ -199,23 +199,14 @@ function Panel.create(controller, model, order, focusable, boost_order)
     slider_row("class_boost", "Voice level", 1.0, 3.0, 0.05,
                function(v) return string.format("%.2fx", v) end)
 
-    add(label("DUCK WHAT COMPETES WITH IT", 13, MUTED), 18, 4)
+    -- One slider per channel. Left of centre cuts through the submix bus,
+    -- right of centre raises through the paired sound class, because neither
+    -- stage can do both directions. Normalised, so the control keeps its native
+    -- 0..1 range and the mapping happens in Lua.
+    add(label("THE MIX AROUND IT", 13, MUTED), 18, 4)
     for _, relpath in ipairs(order) do
-        slider_row(relpath, DISPLAY[relpath] or relpath, 0.15, 1.0, 0.01, decibels)
-    end
-
-    -- One control, not one per channel, and the label says so. Engines and
-    -- ambience cannot be raised separately: they exist only as submixes, and a
-    -- submix cannot be boosted at all, because its bus parameter treats 0 dB as
-    -- both unity and the ceiling. SC_SFX is the only class that reaches them,
-    -- and it reaches all of them at once.
-    if #self.boost_order > 0 then
-        add(label("RAISE  (EXPERIMENTAL)", 13, MUTED), 18, 4)
-        for _, relpath in ipairs(self.boost_order) do
-            slider_row(relpath, DISPLAY[relpath] or relpath:match("([^/]+)$"),
-                       1.0, 2.0, 0.05,
-                       function(v) return string.format("%.2fx", v) end, true)
-        end
+        slider_row(relpath, DISPLAY[relpath] or relpath,
+                   0.15, 2.0, 0.01, decibels, true)
     end
 
     local rule2 = make("Border"); rule2:SetBrushColor(BAR); add(rule2, 2, 12)
@@ -272,6 +263,16 @@ end
 -- Pulls slider positions into the model and returns the list of keys that moved.
 -- Only those get re-applied: re-applying all nine every tick while dragging
 -- would be ninety reflection calls a second for no reason.
+-- A channel's single value: the cut if one is applied, otherwise the boost.
+-- Both are never non-neutral at once, because read() clears the other side.
+function Panel:level(model, relpath)
+    local duck = model.duck[relpath] or 1.0
+    if duck < 1.0 then return duck end
+    local class = self.pair[relpath]
+    if class and model.boost then return model.boost[class] or 1.0 end
+    return 1.0
+end
+
 function Panel:read(model, order)
     local changed = {}
 
@@ -284,27 +285,30 @@ function Panel:read(model, order)
     for _, relpath in ipairs(order) do
         local control = self.sliders[relpath]
         if control then
-            local v = math.floor(control:GetValue() * 100 + 0.5) / 100
-            if math.abs(v - (model.duck[relpath] or 1.0)) > 0.0001 then
-                model.duck[relpath] = v
-                changed[#changed + 1] = relpath
-            end
-        end
-    end
-
-    for _, relpath in ipairs(self.boost_order) do
-        local control = self.sliders[relpath]
-        if control and model.boost then
             local raw = control:GetValue()
             local scale = self.scale[relpath]
             if scale then raw = scale.lo + raw * (scale.hi - scale.lo) end
             local v = math.floor(raw * 100 + 0.5) / 100
-            if math.abs(v - (model.boost[relpath] or 1.0)) > 0.0001 then
-                model.boost[relpath] = v
+
+            -- One slider, two stages. Whichever side of unity it is on takes
+            -- the value and the other is returned to neutral, so they can never
+            -- both be acting at once.
+            local class = self.pair[relpath]
+            local want_duck = (v < 1.0) and v or 1.0
+            local want_boost = (v > 1.0) and v or 1.0
+
+            if math.abs(want_duck - (model.duck[relpath] or 1.0)) > 0.0001 then
+                model.duck[relpath] = want_duck
                 changed[#changed + 1] = relpath
+            end
+            if class and model.boost
+               and math.abs(want_boost - (model.boost[class] or 1.0)) > 0.0001 then
+                model.boost[class] = want_boost
+                changed[#changed + 1] = class
             end
         end
     end
+
     return changed
 end
 
@@ -312,12 +316,7 @@ function Panel:write(model, order)
     self.sliders.class_boost:SetValue(model.class_boost)
     for _, relpath in ipairs(order) do
         if self.sliders[relpath] then
-            self.sliders[relpath]:SetValue(model.duck[relpath] or 1.0)
-        end
-    end
-    for _, relpath in ipairs(self.boost_order) do
-        if self.sliders[relpath] and model.boost then
-            local target = model.boost[relpath] or 1.0
+            local target = self:level(model, relpath)
             local scale = self.scale[relpath]
             if scale and scale.hi > scale.lo then
                 target = (target - scale.lo) / (scale.hi - scale.lo)
@@ -343,11 +342,7 @@ function Panel:unchanged(model, order, dirty)
                     tostring(model.selection), tostring(dirty),
                     tostring(model.bypassed) }
     for _, relpath in ipairs(order) do
-        parts[#parts + 1] = string.format("%.4f", model.duck[relpath] or 1.0)
-    end
-    for _, relpath in ipairs(self.boost_order) do
-        parts[#parts + 1] = string.format("%.4f",
-            (model.boost and model.boost[relpath]) or 1.0)
+        parts[#parts + 1] = string.format("%.4f", self:level(model, relpath))
     end
     local signature = table.concat(parts, "|")
     if signature == self.signature then return true end
@@ -361,13 +356,7 @@ function Panel:update(model, order, dirty)
     for _, relpath in ipairs(order) do
         local slot = self.values[relpath]
         if slot then
-            slot.widget:SetText(FText(slot.format(model.duck[relpath] or 1.0)))
-        end
-    end
-    for _, relpath in ipairs(self.boost_order) do
-        local slot = self.values[relpath]
-        if slot and model.boost then
-            slot.widget:SetText(FText(slot.format(model.boost[relpath] or 1.0)))
+            slot.widget:SetText(FText(slot.format(self:level(model, relpath))))
         end
     end
 

@@ -130,7 +130,29 @@ local CONFIG = {
     --
     -- Set false for a read-only panel that never touches input focus. Values
     -- then change through the console commands instead.
-    panel_grabs_input = true,
+    -- LEAVE THIS FALSE. It is the crash.
+    --
+    -- Over 40 panel opens inside cutscenes with this false and nothing died.
+    -- One open with it true and the game was gone on close. Hypothesis 6 was
+    -- never cleanly cleared: when these calls were removed in 1.1.9 and the
+    -- crash recurred, the old blueprint host was still present and killing it
+    -- independently. Two sufficient causes, eliminated one at a time while the
+    -- other stayed in.
+    --
+    -- True calls SetInputMode_UIOnlyEx on open and SetInputMode_GameOnly on
+    -- close, which moves Slate's focus. During a cutscene the game is moving
+    -- focus too, and the dump put the fault in the Blueprint VM recursing, so
+    -- two systems fighting over focus is the plausible mechanism.
+    panel_grabs_input = false,
+
+    -- The cursor, without the input mode. This is the half of the old
+    -- panel_grabs_input that is not implicated: showing a cursor moves no
+    -- focus. The panel widget is not focusable either, so it should be
+    -- hit-testable without owning focus.
+    --
+    -- If dragging the sliders works with this alone, the mouse is back and the
+    -- crashing call is gone for good.
+    panel_shows_cursor = true,
 
     -- Whether the panel refuses to open during a cutscene, and closes itself if
     -- one starts while it is open.
@@ -239,6 +261,26 @@ local CONFIG = {
         ["Classes/SC_LocalPlayerExhaust"]              = 1.0,
         ["Classes/SC_Ambience"]                        = 1.0,
     },
+    -- Which class raises the channel that each submix ducks. The panel shows
+    -- one slider per pair: below 0 dB it drives the submix, above it drives the
+    -- class.
+    --
+    -- These are not the same set of sounds. A live race scan found 4084 sounds
+    -- loaded and only 577 carrying a sound class, so a cut reaches everything
+    -- routed to the submix while a boost reaches only assets tagged with the
+    -- class. SC_LocalPlayerEngine holds 2 sounds; SS_LocalPlayerEngine carries
+    -- the whole engine. Cuts will therefore feel broader than boosts, and that
+    -- is a property of the game's audio, not of the slider.
+    pair = {
+        ["Submixes/SS_Music"]                          = "Classes/SC_Music_Race",
+        ["Submixes/SS_Crowds"]                         = "Classes/SC_Characters",
+        ["Submixes/SS_HighSpeedAirflow"]               = "Classes/SC_HighSpeedAirflow",
+        ["Submixes/SS_NonLocalPlayerEngineAndExhaust"] = "Classes/SC_NonLocalPlayerEngineAndExhaust",
+        ["Submixes/SS_LocalPlayerEngine"]              = "Classes/SC_LocalPlayerEngine",
+        ["Submixes/SS_LocalPlayerExhaust"]             = "Classes/SC_LocalPlayerExhaust",
+        ["Submixes/SS_Ambience"]                       = "Classes/SC_Ambience",
+    },
+
     boost_order = {
         "Classes/SC_Music_Race",
         "Classes/SC_Characters",
@@ -1309,7 +1351,10 @@ local function close_panel()
                 :SetInputMode_GameOnly(old_owner, false)
         end)
         if not ok then log("close: SetInputMode_GameOnly failed: %s", tostring(err)) end
+    end
 
+    if (CONFIG.panel_shows_cursor or CONFIG.panel_grabs_input)
+       and valid(old_owner) then
         vlog("close: restoring cursor")
         pcall(function() old_owner.bShowMouseCursor = cursor_before end)
     end
@@ -1503,7 +1548,9 @@ local function open_panel()
         vlog("panel: building widgets")
         local created, err = pcall(function()
             return Panel.create(pc, model, CONFIG.duck_order,
-                                CONFIG.panel_grabs_input, CONFIG.boost_order)
+                                CONFIG.panel_grabs_input, CONFIG.pair)
+            -- focusable follows panel_grabs_input, not the cursor: a
+            -- focusable widget left in the viewport steals gamepad focus.
         end)
         if not created then
             log("could not open the panel: %s", tostring(err))
@@ -1516,9 +1563,14 @@ local function open_panel()
     cursor_before = pc.bShowMouseCursor
 
     panel:write(model, CONFIG.duck_order)
+
+    -- Cursor and input mode are deliberately separate. The cursor is cheap and
+    -- moves no focus; the input mode is what took the game down.
+    if CONFIG.panel_shows_cursor or CONFIG.panel_grabs_input then
+        pcall(function() pc.bShowMouseCursor = true end)
+    end
     if CONFIG.panel_grabs_input then
         pcall(function()
-            pc.bShowMouseCursor = true
             StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
                 :SetInputMode_UIOnlyEx(pc, panel.widget, 0, false)
         end)
