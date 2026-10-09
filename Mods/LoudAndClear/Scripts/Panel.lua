@@ -49,13 +49,13 @@ local DISPLAY = {
     ["Submixes/SS_Ambience"]                       = "Ambience",
 
     -- Boost channels. Sound classes, not submixes.
+    ["Classes/SC_Music_Race"]                      = "Music",
+    ["Classes/SC_Characters"]                      = "Crowds",
+    ["Classes/SC_HighSpeedAirflow"]                = "Airflow",
+    ["Classes/SC_NonLocalPlayerEngineAndExhaust"]  = "Rival engines",
     ["Classes/SC_LocalPlayerEngine"]               = "Your engine",
     ["Classes/SC_LocalPlayerExhaust"]              = "Your exhaust",
-    ["Classes/SC_Vehicles"]                        = "Other vehicles",
-    ["Classes/SC_VehicleInAir"]                    = "Airflow",
     ["Classes/SC_Ambience"]                        = "Ambience",
-    ["Classes/SC_Crashing"]                        = "Crashes",
-    ["Classes/SC_Overtakes"]                       = "Overtakes",
 }
 
 local function decibels(multiplier)

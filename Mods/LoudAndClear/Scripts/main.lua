@@ -199,11 +199,25 @@ local CONFIG = {
     -- ambience.
     --
     -- The live report tells a different story, and it changes with where you
-    -- are: 30 classes in the paddock, 49 mid-race. SC_LocalPlayerEngine and
-    -- SC_LocalPlayerExhaust only exist in the second list, which is why an
-    -- earlier version aimed at SC_Vehicles and could never find an engine in
-    -- it. These mirror the duck sliders: SS_LocalPlayerEngine ducks,
-    -- SC_LocalPlayerEngine boosts.
+    -- are: 30 classes in the paddock, 48 mid-race. Every ducked submix turns
+    -- out to have a sound class counterpart of the same name, so each channel
+    -- goes both ways:
+    --
+    --   SS_Music                           SC_Music_Race
+    --   SS_Crowds                          SC_Characters
+    --   SS_HighSpeedAirflow                SC_HighSpeedAirflow
+    --   SS_NonLocalPlayerEngineAndExhaust  SC_NonLocalPlayerEngineAndExhaust
+    --   SS_LocalPlayerEngine               SC_LocalPlayerEngine
+    --   SS_LocalPlayerExhaust              SC_LocalPlayerExhaust
+    --   SS_Ambience                        SC_Ambience
+    --
+    -- Three of those only appear mid-race and sat below every cap the class
+    -- report had, which is why earlier versions aimed at SC_Vehicles and
+    -- SC_VehicleInAir instead and could never find an engine.
+    --
+    -- SC_Crashing, SC_Overtakes, SC_Drift, SC_Impacts, SC_Explosions,
+    -- SC_Boost, SC_Slipstreaming and SC_Surfaces are all real and unclaimed if
+    -- you want more. Ctrl+END lists everything loaded.
     --
     -- SC_SFX is deliberately not in this list. Gain on a parent is inherited,
     -- and it is very likely the parent of these, so boosting both would
@@ -214,23 +228,25 @@ local CONFIG = {
     -- Headroom warning: dialogue is already at 1.7x. Pushing this up as well
     -- makes the mix hot and the limiter audible. boost_ceiling is where it
     -- stops.
+    -- One per duck channel, same order, so the panel reads as a pair of
+    -- columns: pull a channel down above, push it up below.
     boost = {
-        ["Classes/SC_LocalPlayerEngine"]  = 1.0,
-        ["Classes/SC_LocalPlayerExhaust"] = 1.0,
-        ["Classes/SC_Vehicles"]           = 1.0,
-        ["Classes/SC_VehicleInAir"]       = 1.0,
-        ["Classes/SC_Ambience"]           = 1.0,
-        ["Classes/SC_Crashing"]           = 1.0,
-        ["Classes/SC_Overtakes"]          = 1.0,
+        ["Classes/SC_Music_Race"]                      = 1.0,
+        ["Classes/SC_Characters"]                      = 1.0,
+        ["Classes/SC_HighSpeedAirflow"]                = 1.0,
+        ["Classes/SC_NonLocalPlayerEngineAndExhaust"]  = 1.0,
+        ["Classes/SC_LocalPlayerEngine"]               = 1.0,
+        ["Classes/SC_LocalPlayerExhaust"]              = 1.0,
+        ["Classes/SC_Ambience"]                        = 1.0,
     },
     boost_order = {
+        "Classes/SC_Music_Race",
+        "Classes/SC_Characters",
+        "Classes/SC_HighSpeedAirflow",
+        "Classes/SC_NonLocalPlayerEngineAndExhaust",
         "Classes/SC_LocalPlayerEngine",
         "Classes/SC_LocalPlayerExhaust",
-        "Classes/SC_Vehicles",
-        "Classes/SC_VehicleInAir",
         "Classes/SC_Ambience",
-        "Classes/SC_Crashing",
-        "Classes/SC_Overtakes",
     },
     boost_step = 0.05,
     boost_ceiling = 2.0,
@@ -265,6 +281,9 @@ local CONFIG = {
         -- plausible shapes; Ctrl+END during a race lists what is really there.
         ["SC_LocalPlayerEngine"]  = { "TopSpeed", "High", "Loop", "Engine" },
         ["SC_LocalPlayerExhaust"] = { "TopSpeed", "High", "Loop", "Exhaust" },
+        ["SC_NonLocalPlayerEngineAndExhaust"] = { "Loop", "Engine", "Exhaust" },
+        ["SC_HighSpeedAirflow"]   = { "Loop", "Airflow", "Wind" },
+        ["SC_Music_Race"]         = { "Loop", "Race" },
         ["SC_Vehicles"] = { "Engine", "Exhaust", "Throttle", "Rev" },
         ["SC_VehicleInAir"]      = { "Airflow", "Wind", "TopSpeed", "High" },
         ["SC_Ambience"]          = { "Bed_", "_Loop" },
@@ -289,8 +308,9 @@ local CONFIG = {
     test_classes = {
         "SC_LocalPlayerEngine", -- your engine, only loaded in a race
         "SC_LocalPlayerExhaust",
-        "SC_Vehicles",          -- other vehicles and grid sounds
-        "SC_VehicleInAir",      -- airflow
+        "SC_NonLocalPlayerEngineAndExhaust",
+        "SC_HighSpeedAirflow",
+        "SC_Music_Race",
         "SC_Ambience",
         "SC_Characters",        -- crowds and world characters
         "SC_Characters_Vox",    -- dialogue
