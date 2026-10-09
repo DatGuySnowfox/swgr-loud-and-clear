@@ -555,11 +555,36 @@ local function full_name(obj)
 end
 
 -- "Submixes/SS_Voice" -> /Game/Griffin/Audio/Mixing/Submixes/SS_Voice.SS_Voice
+-- StaticFindObject only sees what is already loaded, and outside a race the
+-- engine, exhaust, rival and airflow sound classes are not. That made the raise
+-- half of four sliders quietly do nothing anywhere but a race, with only a vlog
+-- line to say so.
+--
+-- So a miss falls through to loading the asset. The path is already known: it is
+-- the one just searched for. Loading a sound class is a small object, and it is
+-- the thing the slider needs to write to.
 local function resolve(relpath)
     local short = relpath:match("([^/]+)$")
     local path = CONTENT .. relpath .. "." .. short
+
     local ok, obj = pcall(StaticFindObject, path)
     if ok and valid(obj) then return obj, path end
+
+    local loaded
+    pcall(function() loaded = LoadAsset(path) end)
+    if valid(loaded) then
+        vlog("loaded %s on demand", relpath)
+        return loaded, path
+    end
+
+    -- LoadAsset returns nothing useful in some builds, so look again: it may
+    -- still have pulled the object in.
+    ok, obj = pcall(StaticFindObject, path)
+    if ok and valid(obj) then
+        vlog("loaded %s on demand", relpath)
+        return obj, path
+    end
+
     return nil, path
 end
 
