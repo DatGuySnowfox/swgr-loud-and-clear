@@ -243,6 +243,26 @@ local CONFIG = {
     -- it found nothing. These names are measured from a live race with
     -- Ctrl+F11, not taken from the class tree in the README, which lists only
     -- about half of what the game actually uses.
+    -- Which asset to pick within a class, best first. Matched as a
+    -- case-insensitive substring of the asset name. Anything matching nothing
+    -- here is still eligible, it just sorts last, so a class with no entry
+    -- falls back to simply taking the longest asset.
+    --
+    -- The engine ladder is Idle, Low, Med, High, TopSpeed, so TopSpeed is the
+    -- flat-out sound. Some bikes abbreviate Engine to Eng and Exhaust to Exh.
+    test_prefer = {
+        ["SC_Vehicles"] = {
+            "Engine_TopSpeed", "Eng_TopSpeed",
+            "Engine_High", "Eng_High",
+            "Exhaust_TopSpeed", "Exh_TopSpeed",
+            "Engine_", "Eng_",
+        },
+        ["SC_VehicleInAir"] = { "TopSpeed", "High", "Airflow" },
+        ["SC_Ambience"]     = { "Loop" },
+        ["SC_Characters"]   = { "Crowd", "Loop" },
+        ["SC_Music"]        = { "Loop", "Race" },
+    },
+
     test_classes = {
         "SC_Vehicles",          -- engines and exhaust
         "SC_VehicleInAir",      -- airflow
@@ -1020,7 +1040,7 @@ local function find_samples()
     if samples then return samples end
     samples = {}
 
-    local wanted, lengths = {}, {}
+    local wanted, lengths, ranks = {}, {}, {}
     for _, name in ipairs(test_targets()) do wanted[name] = true end
 
     -- Cues before waves: a SoundWave usually has no routing of its own, the cue
@@ -1045,11 +1065,30 @@ local function find_samples()
                         pcall(function() duration = sound.Duration end)
                         if type(duration) == "number"
                            and duration >= CONFIG.test_min_seconds then
-                            -- Prefer the longest, because the first usable hit
-                            -- was a one-shot scream. A longer asset is a better
-                            -- sample of what a channel normally sounds like.
-                            if duration > (lengths[class_name] or 0) then
+                            local asset = (sound:GetFullName() or "")
+                                :match("([^.]+)$") or ""
+                            local lower = asset:lower()
+
+                            -- Rank by the first preference it matches. Lower is
+                            -- better; no match sorts last but stays eligible.
+                            local rank = math.huge
+                            local prefs = CONFIG.test_prefer[class_name]
+                            if prefs then
+                                for i, needle in ipairs(prefs) do
+                                    if lower:find(needle:lower(), 1, true) then
+                                        rank = i
+                                        break
+                                    end
+                                end
+                            end
+
+                            local held = ranks[class_name] or math.huge
+                            local better = rank < held
+                                or (rank == held
+                                    and duration > (lengths[class_name] or 0))
+                            if better then
                                 samples[class_name] = sound
+                                ranks[class_name] = rank
                                 lengths[class_name] = duration
                             end
                         end
@@ -1062,8 +1101,14 @@ local function find_samples()
     local found = 0
     for class_name, sound in pairs(samples) do
         found = found + 1
-        log("  %-22s %s", class_name,
-            (sound:GetFullName() or ""):match("([^.]+)$") or "?")
+        local rank = ranks[class_name]
+        local prefs = CONFIG.test_prefer[class_name]
+        local why = "longest"
+        if prefs and rank and rank ~= math.huge then
+            why = "matched " .. prefs[rank]
+        end
+        log("  %-22s %-46s (%s)", class_name,
+            (sound:GetFullName() or ""):match("([^.]+)$") or "?", why)
     end
     log("found %d of %d samples (%d sounds scanned, %d carried a class)",
         found, #test_targets(), scanned, routed)
