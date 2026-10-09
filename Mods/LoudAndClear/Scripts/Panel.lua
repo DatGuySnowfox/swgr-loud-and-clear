@@ -78,8 +78,8 @@ function Panel.create(controller, model, order, focusable, boost_order)
     assert(widget_tree_class and widget_tree_class:IsValid(),
         "UMG.WidgetTree unavailable")
 
-    local self = { sliders = {}, values = {}, buttons = {}, width = 470, height = 40,
-                   boost_order = boost_order or {} }
+    local self = { sliders = {}, values = {}, buttons = {}, scale = {},
+                   width = 470, height = 40, boost_order = boost_order or {} }
 
     -- Outered to the controller so UUserWidget::GetWorld resolves through it.
     -- A widget built this way never runs Initialize(), which is the thing that
@@ -149,7 +149,7 @@ function Panel.create(controller, model, order, focusable, boost_order)
 
     -- A labelled slider row: caption on the left, live readout on the right,
     -- slider underneath. Returns nothing; everything is stashed on self.
-    local function slider_row(key, caption, minimum, maximum, step, readout)
+    local function slider_row(key, caption, minimum, maximum, step, readout, normalised)
         local head = make("HorizontalBox")
         head:AddChildToHorizontalBox(label(caption, 15, TEXT))
             :SetSize({ SizeRule = 1, Value = 1 })
@@ -159,15 +159,41 @@ function Panel.create(controller, model, order, focusable, boost_order)
         add(head, 22, 2)
 
         local control = make("Slider")
-        control:SetMinValue(minimum)
-        control:SetMaxValue(maximum)
-        control:SetStepSize(step)
+        if normalised then
+            -- Left on the default 0..1. self.scale carries the real range and
+            -- read/write/update convert. See the note on this file's history:
+            -- a slider configured with SetMinValue(1.0)/SetMaxValue(2.0) only
+            -- travelled 0.01, and this sidesteps whatever caused that.
+            self.scale[key] = { lo = minimum, hi = maximum }
+            control:SetStepSize(step / (maximum - minimum))
+        else
+            control:SetMinValue(minimum)
+            control:SetMaxValue(maximum)
+            control:SetStepSize(step)
+        end
         control:SetSliderBarColor(BAR)
         control:SetSliderHandleColor(key == "class_boost" and AMBER or CYAN_DIM)
         add(control, 20, 12)
 
         self.sliders[key] = control
         self.values[key] = { widget = value, format = readout }
+
+        -- Read the range back rather than trusting the setters. The boost
+        -- slider only travelled 0.01 and the duck sliders are fine, so the
+        -- difference is worth seeing rather than guessing at.
+        local function peek(name)
+            local ok, v = pcall(function() return control[name] end)
+            if not ok then return "<err>" end
+            if type(v) == "number" then return string.format("%.4f", v) end
+            return tostring(v)
+        end
+        print(string.format(
+            "[LoudAndClear] slider %s: asked min=%.2f max=%.2f step=%.2f | "
+            .. "reads MinValue=%s MaxValue=%s StepSize=%s Value=%s "
+            .. "MouseUsesStep=%s Locked=%s\n",
+            key, minimum, maximum, step,
+            peek("MinValue"), peek("MaxValue"), peek("StepSize"),
+            peek("Value"), peek("MouseUsesStep"), peek("Locked")))
     end
 
     add(label("DIALOGUE", 13, MUTED), 18, 4)
@@ -189,7 +215,7 @@ function Panel.create(controller, model, order, focusable, boost_order)
         for _, relpath in ipairs(self.boost_order) do
             slider_row(relpath, DISPLAY[relpath] or "Engines, ambience, impacts",
                        1.0, 2.0, 0.05,
-                       function(v) return string.format("%.2fx", v) end)
+                       function(v) return string.format("%.2fx", v) end, true)
         end
     end
 
@@ -270,7 +296,10 @@ function Panel:read(model, order)
     for _, relpath in ipairs(self.boost_order) do
         local control = self.sliders[relpath]
         if control and model.boost then
-            local v = math.floor(control:GetValue() * 100 + 0.5) / 100
+            local raw = control:GetValue()
+            local scale = self.scale[relpath]
+            if scale then raw = scale.lo + raw * (scale.hi - scale.lo) end
+            local v = math.floor(raw * 100 + 0.5) / 100
             if math.abs(v - (model.boost[relpath] or 1.0)) > 0.0001 then
                 model.boost[relpath] = v
                 changed[#changed + 1] = relpath
@@ -289,7 +318,12 @@ function Panel:write(model, order)
     end
     for _, relpath in ipairs(self.boost_order) do
         if self.sliders[relpath] and model.boost then
-            self.sliders[relpath]:SetValue(model.boost[relpath] or 1.0)
+            local target = model.boost[relpath] or 1.0
+            local scale = self.scale[relpath]
+            if scale and scale.hi > scale.lo then
+                target = (target - scale.lo) / (scale.hi - scale.lo)
+            end
+            self.sliders[relpath]:SetValue(target)
         end
     end
 end

@@ -1063,8 +1063,20 @@ local function cutscene(report)
                         seen = seen + 1
                         local ok, active = pcall(function() return player:IsPlaying() end)
                         if ok and active == true then
-                            playing = true
-                            if report then report("  playing: %s", id) end
+                            -- A looping sequence is scenery, not a cutscene.
+                            -- This game leaves ambient animation players running
+                            -- on a loop, and counting those blocked the panel
+                            -- for a whole map.
+                            local loops
+                            pcall(function()
+                                loops = player.PlaybackSettings.LoopCount.Value
+                            end)
+                            if loops == 0 then
+                                playing = true
+                                if report then report("  playing: %s", id) end
+                            elseif report then
+                                report("  ignored (loops=%s): %s", tostring(loops), id)
+                            end
                         end
                     end
                 end
@@ -1073,6 +1085,8 @@ local function cutscene(report)
     end
     if report then
         report("  %d sequence player(s) visible, playing = %s", seen, tostring(playing))
+        report("  a player only counts as a cutscene if LoopCount reads 0;")
+        report("  anything looping, or unreadable, is ignored on purpose")
     end
     return playing, seen
 end
@@ -1087,6 +1101,38 @@ local function report_cutscene()
         log("  no sequence players exist at all, so the guard is inert here")
     end
     log("  the panel would %s right now", playing and "refuse to open" or "open")
+end
+
+-- See the note above sweep_orphan_panels' call site. Only ever called from a
+-- keypress, never from a timer or during a load.
+local function sweep_orphan_panels()
+    local removed = 0
+    pcall(function()
+        local widgets = FindAllOf("UserWidget")
+        if not widgets then return end
+        for _, widget in ipairs(widgets) do
+            if valid(widget) then
+                local class_name
+                pcall(function()
+                    class_name = widget:GetClass():GetFName():ToString()
+                end)
+                -- Bare engine UserWidget, not a WBP_*_C: ours.
+                if class_name == "UserWidget" then
+                    local in_viewport
+                    pcall(function() in_viewport = widget:IsInViewport() end)
+                    if in_viewport == true then
+                        if pcall(function() widget:RemoveFromParent() end) then
+                            removed = removed + 1
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    if removed > 0 then
+        log("removed %d panel widget(s) left over from a previous load", removed)
+    end
+    return removed
 end
 
 local function open_panel()
@@ -1116,6 +1162,10 @@ local function open_panel()
             log("not opening during a cutscene. Press HOME again once it ends.")
             log("  Every freeze this mod has caused happened in one, so the panel")
             log("  stays shut until it ends. Ctrl+F10 reports what it can see.")
+            log("  If no cutscene is playing, the guard is wrong: set")
+            log("  cutscene_guard = false in CONFIG and tell me what Ctrl+F10 says.")
+        else
+            log("still refusing: a sequence is playing. Ctrl+F10 names it.")
         end
         return false
     end
@@ -1131,6 +1181,10 @@ local function open_panel()
         panel = panel_cached
         panel:show()
     else
+        -- About to build. If a previous load left one on screen, it is still
+        -- there and invisible to this Lua state, so clear it before adding
+        -- another on top.
+        sweep_orphan_panels()
         vlog("panel: building widgets")
         local created, err = pcall(function()
             return Panel.create(pc, model, CONFIG.duck_order,
