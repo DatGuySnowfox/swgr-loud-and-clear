@@ -269,7 +269,12 @@ local CONFIG = {
         "SC_Ambience",
         "SC_Characters",        -- crowds and world characters
         "SC_Characters_Vox",    -- dialogue
-        "SC_Music",
+        -- There is no plain SC_Music in this game. The live class report
+        -- lists SC_Music_Cinematics, SC_Music_Menus and SC_Music_Paddock,
+        -- which is why the set kept coming back one short.
+        "SC_Music_Menus",
+        "SC_Music_Paddock",
+        "SC_Music_Cinematics",
         "SC_Overtakes",
     },
 
@@ -1031,6 +1036,9 @@ end
 -- demonstrates nothing about a submix slider.
 local samples = nil
 local sample_components = {}
+-- Declared global so the LoadMap hook, which is installed further down, can
+-- clear the cache. See forget_samples.
+forget_samples = nil
 
 local function test_targets()
     return CONFIG.test_classes
@@ -1117,6 +1125,11 @@ local function find_samples()
         log("  loaded sounds actually use, which is how to fix this.")
     end
     return samples
+end
+
+-- Dropping the cache makes the next toggle re-pick from whatever is loaded now.
+function forget_samples()
+    samples = nil
 end
 
 -- Stopped on the next toggle and on panel close, which is the whole reason
@@ -1580,7 +1593,13 @@ if Panel then
                 panel_cached = nil
             end
         end)
-        RegisterLoadMapPostHook(function() panel_suspended = false end)
+        RegisterLoadMapPostHook(function()
+            panel_suspended = false
+            -- Different area, different sounds loaded. Keeping the paddock's
+            -- picks through a race is how you end up comparing grid-intro
+            -- warmups against your race mix.
+            forget_samples()
+        end)
     end)
 
     start_panel_loop = function()
@@ -1827,6 +1846,46 @@ local function report_sounds()
     log("%d sounds loaded, %d carry routing", total, routed)
     dump("submixes in use", submixes)
     dump("sound classes in use", classes)
+
+    -- What could be chosen for each test class, so preferences can be set from
+    -- what is loaded rather than from asset names guessed out of the pak index.
+    local chosen = find_samples()
+    for _, class_name in ipairs(CONFIG.test_classes) do
+        local rows = {}
+        for _, kind in ipairs({ "SoundCue", "SoundWave" }) do
+            local ok, sounds = pcall(FindAllOf, kind)
+            if ok and sounds then
+                for _, sound in ipairs(sounds) do
+                    if valid(sound) then
+                        local name
+                        pcall(function()
+                            local sc = sound.SoundClassObject
+                            if valid(sc) then name = sc:GetFName():ToString() end
+                        end)
+                        if name == class_name then
+                            local d
+                            pcall(function() d = sound.Duration end)
+                            rows[#rows + 1] = {
+                                asset = (sound:GetFullName() or ""):match("([^.]+)$") or "?",
+                                d = type(d) == "number" and d or 0,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(rows, function(a, b) return a.d > b.d end)
+        local picked = chosen[class_name]
+        local picked_name = picked
+            and ((picked:GetFullName() or ""):match("([^.]+)$") or "?") or nil
+        log("%s: %d candidate(s)", class_name, #rows)
+        for i = 1, math.min(#rows, 10) do
+            log("   %s %-52s %.1fs",
+                rows[i].asset == picked_name and "->" or "  ",
+                rows[i].asset, rows[i].d)
+        end
+        if #rows == 0 then log("   none loaded here") end
+    end
 end
 
 RegisterConsoleCommandHandler("lac_sounds", function()
