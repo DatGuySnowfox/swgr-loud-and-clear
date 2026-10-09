@@ -226,19 +226,19 @@ local CONFIG = {
     boost_step = 0.05,
     boost_ceiling = 2.0,
 
-    -- Toggling Bypass plays one real game sound through every channel the panel
+    -- Toggling Compare plays one real game sound through every channel the panel
     -- adjusts, all at once, so the two mixes can be compared when the game
     -- itself is quiet. Samples are found at runtime by the submix they send to,
     -- never by asset path: a path is a thing a patch can move, and matching by
     -- submix guarantees the sample demonstrates the slider beside it.
     --
     -- They are spawned rather than fired and forgotten, so a looping engine bed
-    -- can be stopped again. Toggling Bypass again, or closing the panel, stops
+    -- can be stopped again. Toggling Compare again, or closing the panel, stops
     -- them. Set test_sounds = false to turn it off.
     test_sounds = true,
     test_min_seconds = 0.4,
 
-    -- What a Bypass toggle plays, together. Sound classes, not submixes:
+    -- What a Compare toggle plays, together. Sound classes, not submixes:
     -- SoundSubmixObject is set on two sounds in the entire game, so matching on
     -- it found nothing. These names are measured from a live race with
     -- Ctrl+F11, not taken from the class tree in the README, which lists only
@@ -1431,18 +1431,20 @@ local function panel_action(id)
         adopt(DEFAULTS)
         log("back to the mod's default mix. Save to keep this.")
 
-    -- Bypass: a toggle, not a one-shot, so the game's own mix can be compared
-    -- against this one by ear. That comparison is the entire job here, and the
-    -- old one-way "Defaults" button made it awkward and was mislabelled besides.
+    -- Compare: a toggle, not a one-shot, so the game's own mix can be heard
+    -- against this one by ear. That comparison is the entire job here. It was
+    -- called Bypass until it also started playing a sample through every
+    -- channel, at which point it stopped being an off switch and became an A/B
+    -- test, and "Bypass: off" read as though it disabled the comparison.
     elseif id == "bypass" then
         model.bypassed = not model.bypassed
         if model.bypassed then
             reset_now()
-            log("bypassed, you are hearing the game's own mix")
+            log("comparing: you are hearing the game's own mix")
         else
             applied = true
             apply_now()
-            log("bypass off")
+            log("comparing: back to your mix")
         end
         -- After the switch, so the samples demonstrate whichever mix is now in
         -- effect rather than the one being left behind.

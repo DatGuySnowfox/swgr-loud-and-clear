@@ -1,10 +1,10 @@
 1.2.0
 
 New: an in-game mix panel on HOME. Nine sliders, voice level and the seven channels competing with it, each with a live dB readout. Drag with the mouse and you hear every change while you make it.
-New: Save, Undo, Mod defaults, and a Bypass toggle for comparing your mix against the game's own by ear.
+New: Save, Undo, Mod defaults, and a Compare toggle that switches between your mix and the game's own, playing a sample through every channel so there is something to judge by ear.
 New: your settings are saved and reloaded on the next launch, so tuning no longer means editing the Lua by hand.
-New: the panel stays shut during cutscenes, and closes itself if one starts while it is open. Set cutscene_guard = false in CONFIG if you would rather it did not.
-New: Ctrl+F10 and the lac_cutscene command report whether a cutscene is currently detected.
+New: an optional cutscene guard that keeps the panel shut while a cutscene plays. Off by default, because this game runs ambient idle animations through the same system and the guard cannot tell the two apart, so it blocked the panel in hub areas. Set cutscene_guard = true in CONFIG if you want it.
+New: Ctrl+F10 and the lac_cutscene command report whether a cutscene is currently detected, and Ctrl+F11 lists which sound classes the loaded sounds use.
 Fixed: dialogue could end up louder than you set it. Under some reload conditions the mod read its own boosted output back as the game's original level and boosted it again, compounding each time. It now refuses to record a value that is not the authored one, and says so in the log.
 Fixed: the mod no longer scans the whole audio graph on every launch. That was several hundred object lookups at startup for information that is now written down.
 Compatible with the 8 October game patch, build 25801363, which moved two of the addresses UE4SS uses to find the engine. If UE4SS started crashing for you after that patch, replacement signature files are in the GitHub repo under Signatures/.

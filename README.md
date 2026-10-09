@@ -61,16 +61,16 @@ values at the engine ten times a second.
 | **Save** | Keeps the current values for future launches. Greyed out when there is nothing unsaved. |
 | **Undo** | Back to the last saved values, discarding changes since. Greyed out when there is nothing to undo. |
 | **Mod defaults** | Back to the values the mod ships with (1.7x voice, the dB cuts in the table above). Still needs Save to persist. |
-| **Bypass** | A toggle. On means you hear the game's own unmodified mix. |
+| **Compare** | A toggle between your mix and the game's own. Each press also plays a sample through every channel, so there is something to judge even when the game is quiet. |
 | **Close** | Closes the panel. `HOME` does the same. |
 
 Drag the sliders with the mouse and click the buttons. The panel takes the
 cursor while it is open and hands it back on close.
 
-**Use Bypass to decide whether a change is actually better.** Toggling between
+**Use Compare to decide whether a change is actually better.** Toggling between
 your mix and the game's is the fastest way to tell, and far more reliable than
 trying to remember what the previous value sounded like. Dragging any slider
-lifts Bypass, since touching a slider means you want to hear your own mix again.
+lifts Compare, since touching a slider means you want to hear your own mix again.
 
 #### How to tune it
 
@@ -82,7 +82,7 @@ lifts Bypass, since touching a slider means you want to hear your own mix again.
    bus; back it off and take the rest from the channels below.
 3. Pull down whichever channel is actually masking the dialogue. Music and
    crowds are the usual culprits, airflow and engines during a race.
-4. Hit **Bypass** twice to check you have improved things rather than just made
+4. Hit **Compare** twice to check you have improved things rather than just made
    them louder.
 5. **Save**.
 
@@ -150,10 +150,18 @@ per-frame `Tick` against a tree it no longer recognised.
 `WidgetTree` by hand. Every widget in the panel comes from `/Script/UMG`, and
 nothing in the file references `/Game` at all.
 
-**And a second line of defence**, because one reasoned fix for an intermittent
-crash is not the same as a proven one. The panel refuses to open while a cutscene
-is playing, and closes itself if one starts while it is open. Detection is
+**There is also a cutscene guard, and it ships off.** It was written as a second
+line of defence while the crash was unexplained: the panel refuses to open while
+a cutscene plays, and closes itself if one starts. Detection is
 `UMovieSceneSequencePlayer::IsPlaying` across every live sequence player.
+
+It is off because it cannot tell a cutscene from scenery. This game runs ambient
+idle animations through the same system, with `LoopCount` reading 0 exactly like
+a one-shot cinematic, so the guard blocked the panel for the whole of the
+paddock. Two discriminators were tried and both failed: any playing sequence,
+then any non-looping one. Since the actual cause was removed rather than
+contained, a guard that reliably breaks a hub area is the worse trade. Set
+`cutscene_guard = true` if you want it.
 `APlayerController::bCinematicMode` was tried first and is useless here: UE4SS
 does not map engine bitfield bools, so reading it returns a `TrivialObject`
 rather than `true` or `false`, and the original guard silently never fired.

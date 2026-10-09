@@ -244,7 +244,7 @@ function Panel.create(controller, model, order, focusable, boost_order)
     add(values_row, 32, 5)
 
     local mode_row = make("HorizontalBox")
-    button("bypass", "Bypass", mode_row)
+    button("bypass", "Compare", mode_row)
     button("close", "Close", mode_row)
     add(mode_row, 32, 4)
 
@@ -370,7 +370,7 @@ function Panel:update(model, order, dirty)
     end
 
     if model.bypassed then
-        self.status:SetText(FText("Bypassed, hearing the game's own mix"))
+        self.status:SetText(FText("Comparing: you are hearing the game's own mix"))
         tint(self.status, CYAN)
     else
         self.status:SetText(FText(dirty and "Unsaved changes" or "Saved"))
@@ -383,9 +383,11 @@ function Panel:update(model, order, dirty)
         if button.id == "save" or button.id == "undo" then enabled = dirty end
         button.control:SetIsEnabled(enabled)
 
-        -- Bypass is a toggle, so its own label carries the state.
+        -- The label says which mix you are hearing, not on or off. With two
+        -- mixes in play, "on" does not say which one is playing.
         if button.id == "bypass" then
-            button.caption:SetText(FText(model.bypassed and "Bypass: ON" or "Bypass: off"))
+            button.caption:SetText(FText(
+                model.bypassed and "Compare: game mix" or "Compare: your mix"))
         end
 
         local active = index == model.selection or button.control:IsHovered()
